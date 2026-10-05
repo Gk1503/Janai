@@ -4,8 +4,8 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import api, { getApiError } from '../services/api'
 import { useAuth, useToast } from '../context/AppContexts'
 
-function AuthFrame({ eyebrow, title, description, children, footer }) {
-  return <section className="auth-page"><aside className="auth-photo"><img src="/Hero-image.png" alt="Fresh produce from Janai" /></aside><div className="auth-panel"><Link className="auth-back" to="/"><ArrowLeft size={16} />Back to Janai</Link><div className="auth-panel-inner"><Link className="auth-logo" to="/" aria-label="Janai home"><img src="/Janai-logo.jpg" alt="Janai, Fruits Vegetables Groceries" /></Link><span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p className="auth-description">{description}</p>{children}{footer && <div className="auth-footer">{footer}</div>}</div></div></section>
+function AuthFrame({ eyebrow, title, description, children, footer, standalone = false }) {
+  return <section className="auth-page"><aside className="auth-photo"><img src="/Hero-image.png" alt="Fresh produce from Janai" /></aside><div className="auth-panel">{!standalone && <Link className="auth-back" to="/"><ArrowLeft size={16} />Back to Janai</Link>}<div className="auth-panel-inner">{standalone ? <div className="auth-logo"><img src="/Janai-logo.jpg" alt="Janai" /></div> : <Link className="auth-logo" to="/" aria-label="Janai home"><img src="/Janai-logo.jpg" alt="Janai, Fruits Vegetables Groceries" /></Link>}<span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p className="auth-description">{description}</p>{children}{footer && <div className="auth-footer">{footer}</div>}</div></div></section>
 }
 
 export function LoginPage() {
@@ -134,4 +134,32 @@ export function ContactPage() {
     try { const { data } = await api.post('/contact', form); toast(data.message || 'Message sent.'); setForm({ name: '', email: '', phone: '', subject: 'General question', message: '' }) } catch (requestError) { setError(getApiError(requestError)) } finally { setBusy(false) }
   }
   return <section className="page-container contact-page"><div className="page-title-row"><div><span className="eyebrow">WE’RE HERE TO HELP</span><h1>Contact Janai</h1></div></div><div className="contact-layout"><form className="contact-form" onSubmit={submit}><div className="form-grid"><label className="field"><span>Name</span><input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label><label className="field"><span>Email</span><input required type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label><label className="field"><span>Phone</span><input type="tel" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} /></label><label className="field"><span>Subject</span><select value={form.subject} onChange={(event) => setForm({ ...form, subject: event.target.value })}><option>General question</option><option>Order support</option><option>Pre-orders</option><option>Bulk orders</option></select></label><label className="field field-wide"><span>Message</span><textarea required rows="5" value={form.message} onChange={(event) => setForm({ ...form, message: event.target.value })} /></label></div>{error && <div className="form-error">{error}</div>}<button className="button button-primary" disabled={busy}>{busy ? 'Sending…' : 'Send message'}<ArrowRight size={16} /></button></form><aside className="contact-aside"><h2>Need a hand?</h2><p><Phone size={16} /> +91 98765 43210</p><p><Mail size={16} /> hello@janai.in</p><p><MapPin size={16} /> Serving local homes and businesses</p></aside></div></section>
+}
+
+export function AdminLoginPage() {
+  const { adminLogin, user } = useAuth()
+  const navigate = useNavigate()
+  const [form, setForm] = useState({ adminId: '', password: '' })
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (user?.role === 'admin') navigate('/admin', { replace: true })
+  }, [user, navigate])
+
+  async function submit(event) {
+    event.preventDefault()
+    setError('')
+    setBusy(true)
+    try {
+      await adminLogin(form)
+      navigate('/admin', { replace: true })
+    } catch (err) {
+      setError(getApiError(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return <AuthFrame standalone eyebrow="JANAI OPERATIONS" title="Admin Login" description="Sign in with your admin ID and password."><form className="auth-form" onSubmit={submit}><label className="field"><span>Admin ID</span><input required autoComplete="username" value={form.adminId} onChange={(event) => setForm({ ...form, adminId: event.target.value })} /></label><label className="field"><span>Password</span><input required type="password" autoComplete="current-password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /></label>{error && <div className="inline-error">{error}</div>}<button className="button button-primary button-full" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}<ArrowRight size={15} /></button></form></AuthFrame>
 }

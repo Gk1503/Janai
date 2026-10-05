@@ -1,9 +1,10 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import AdminLayout from './components/AdminLayout'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
 import { AuthProvider, CartProvider, ToastProvider } from './context/AppContexts'
 import AdminPage from './pages/AdminPage'
-import { AboutPage, ContactPage, ForgotPasswordPage, LoginPage, RegisterPage } from './pages/AccountPages'
+import { AboutPage, AdminLoginPage, ContactPage, ForgotPasswordPage, LoginPage, RegisterPage } from './pages/AccountPages'
 import BulkOrdersPage from './pages/BulkOrdersPage'
 import NotFoundPage from './pages/NotFoundPage'
 import { CartPage, CheckoutPage, OrderDetailPage, OrdersPage, PreOrdersPage, ProfilePage } from './pages/OrderPages'
@@ -31,9 +32,10 @@ export default function App() {
         <Route path="orders/:id" element={<OrderDetailPage />} />
         <Route path="profile" element={<ProfilePage />} />
       </Route>
-      <Route element={<ProtectedRoute admin />}><Route path="admin" element={<AdminPage />} /></Route>
       <Route path="404" element={<NotFoundPage />} />
       <Route path="*" element={<NotFoundPage />} />
     </Route>
+    <Route path="admin/login" element={<AdminLoginPage />} />
+    <Route element={<ProtectedRoute admin />}><Route element={<AdminLayout />}><Route path="admin" element={<AdminPage />} /></Route></Route>
   </Routes></BrowserRouter></CartProvider></AuthProvider></ToastProvider>
 }

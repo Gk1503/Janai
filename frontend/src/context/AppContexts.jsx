@@ -31,6 +31,11 @@ export function AuthProvider({ children }) {
     return saveSession(data)
   }
 
+  async function adminLogin(credentials) {
+    const { data } = await api.post('/auth/admin-login', credentials)
+    return saveSession(data)
+  }
+
   async function loginWithOtp(credentials) {
     const { data } = await api.post('/auth/verify-login-otp', credentials)
     return saveSession(data)
@@ -52,7 +57,7 @@ export function AuthProvider({ children }) {
     setUser(null)
   }
 
-  return <AuthContext.Provider value={{ user, setUser, authLoading, login, loginWithOtp, register, updateProfile, logout }}>{children}</AuthContext.Provider>
+  return <AuthContext.Provider value={{ user, setUser, authLoading, login, adminLogin, loginWithOtp, register, updateProfile, logout }}>{children}</AuthContext.Provider>
 }
 
 export function CartProvider({ children }) {

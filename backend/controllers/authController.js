@@ -22,6 +22,14 @@ export const login = asyncHandler(async (req, res) => {
   return sendAuth(res, user);
 });
 
+export const adminLogin = asyncHandler(async (req, res) => {
+  const { adminId, password } = req.body;
+  if (!adminId || !password) return res.status(400).json({ message: 'Admin ID and password are required.' });
+  const user = await User.findOne({ adminId: String(adminId).toLowerCase().trim(), role: 'admin' }).select('+password');
+  if (!user || !(await bcrypt.compare(password, user.password))) return res.status(401).json({ message: 'Admin ID or password is incorrect.' });
+  return sendAuth(res, user);
+});
+
 export const me = asyncHandler(async (req, res) => res.json({ user: req.user.toSafeJSON() }));
 
 export const updateProfile = asyncHandler(async (req, res) => {

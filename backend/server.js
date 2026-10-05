@@ -11,6 +11,7 @@ import preOrderRoutes from './routes/preOrderRoutes.js';
 import bulkOrderRoutes from './routes/bulkOrderRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 import contactRoutes from './routes/contactRoutes.js';
+import { ensureDefaultAdmin } from './config/defaultAdmin.js';
 import { errorHandler, notFound } from './middleware/errorHandler.js';
 
 const app = express();
@@ -32,6 +33,7 @@ app.use(errorHandler);
 const port = process.env.PORT || 5000;
 
 connectDB()
+  .then(ensureDefaultAdmin)
   .then(() => app.listen(port, () => console.log(`Server running on port ${port}`)))
   .catch((error) => {
     const code = error.code || error.cause?.code;

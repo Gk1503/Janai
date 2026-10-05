@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft, CalendarDays, CircleUserRound, Heart, Home, Leaf, Menu, Package, Search, ShoppingBag, ShoppingCart, X } from 'lucide-react'
 import { useAuth, useCart } from '../context/AppContexts'
 
@@ -64,6 +64,8 @@ function Footer() {
 
 export default function Layout() {
   const { pathname } = useLocation()
+  const { user } = useAuth()
+  if (user?.role === 'admin') return <Navigate to="/admin" replace />
   const authPage = ['/login', '/register'].includes(pathname)
   return <div className="app-shell">{!authPage && <Navbar />}<main><Outlet /></main>{!authPage && <Footer />}{!authPage && <MobileBottomNav />}</div>
 }
