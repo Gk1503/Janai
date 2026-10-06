@@ -126,8 +126,8 @@ export default function AdminProductsPage() {
                     <td>{product.stock} {product.unit}</td>
                     <td><span className={`status-pill${statusInfo.key === 'out_of_stock' ? ' is-muted' : ''}`}>{statusInfo.label}</span></td>
                     <td>
-                      <button type="button" className="table-action" onClick={() => setFormTarget(product)}><Pencil size={12} />Edit</button>
-                      <button type="button" className="table-action danger" onClick={() => setDeleteTarget(product)}><Trash2 size={12} />Delete</button>
+                      <button type="button" className="table-action" onClick={() => setFormTarget(product)}><Pencil size={14} />Edit</button>
+                      <button type="button" className="table-action danger" onClick={() => setDeleteTarget(product)}><Trash2 size={14} />Delete</button>
                     </td>
                   </tr>
                 })}

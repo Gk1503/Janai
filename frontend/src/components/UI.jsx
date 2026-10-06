@@ -7,7 +7,8 @@ const categoryImages = { Fruits: '/fruit.jpg', Vegetables: '/Vegatables.png', Gr
 
 export function productImage(product) {
   const image = product.images?.[0] || product.image
-  return typeof image === 'string' && image.startsWith('/') ? image : categoryImages[product.category] || '/fruit.jpg'
+  const isUsable = typeof image === 'string' && (image.startsWith('/') || image.startsWith('data:image') || image.startsWith('http'))
+  return isUsable ? image : categoryImages[product.category] || '/fruit.jpg'
 }
 
 export function Loader({ label = 'Loading Janai' }) { return <div className="loading-state"><span className="spinner" />{label}</div> }
