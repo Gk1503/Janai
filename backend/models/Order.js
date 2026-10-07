@@ -12,9 +12,11 @@ const itemSchema = new mongoose.Schema({
 const addressSchema = new mongoose.Schema({
 	recipient: { type: String, required: true, trim: true },
 	phone: { type: String, required: true, trim: true },
+	house: { type: String, trim: true, default: '' },
 	street: { type: String, required: true, trim: true },
-	city: { type: String, required: true, trim: true },
-	state: { type: String, required: true, trim: true },
+	landmark: { type: String, trim: true, default: '' },
+	city: { type: String, trim: true, default: '' },
+	state: { type: String, trim: true, default: '' },
 	postalCode: { type: String, required: true, trim: true },
 }, { _id: false });
 
@@ -25,6 +27,8 @@ const orderSchema = new mongoose.Schema({
 	orderType: { type: String, enum: ['normal', 'preorder', 'bulk'], default: 'normal', index: true },
 	deliveryAddress: { type: addressSchema, required: true },
 	deliveryDate: { type: Date, required: true },
+	preferredTimeSlot: { type: String, trim: true, default: '' },
+	deliveryInstructions: { type: String, trim: true, maxlength: 300, default: '' },
 	paymentMethod: { type: String, enum: ['cod', 'online'], default: 'cod' },
 	paymentStatus: { type: String, enum: ['pending', 'paid', 'failed'], default: 'pending' },
 	orderStatus: { type: String, enum: ['placed', 'confirmed', 'preparing', 'out_for_delivery', 'delivered', 'cancelled'], default: 'placed', index: true },
