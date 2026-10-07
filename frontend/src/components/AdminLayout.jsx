@@ -1,13 +1,17 @@
-import { Outlet, useNavigate } from 'react-router-dom'
-import { LogOut } from 'lucide-react'
-import { useAuth } from '../context/AppContexts'
+import { useState } from 'react'
+import { Outlet } from 'react-router-dom'
+import AdminSidebar from './AdminSidebar'
+import AdminTopbar from './AdminTopbar'
 
 export default function AdminLayout() {
-  const { logout } = useAuth()
-  const navigate = useNavigate()
-  function signOut() {
-    logout()
-    navigate('/admin/login', { replace: true })
-  }
-  return <div className="app-shell"><header className="site-header"><div className="page-container admin-bar"><div className="brand-logo"><img src="/Janai-logo.jpg" alt="Janai" /></div><button className="button button-outline" onClick={signOut}>Log out<LogOut size={15} /></button></div></header><main><Outlet /></main></div>
+  const [menuOpen, setMenuOpen] = useState(false)
+
+  return <div className="adm-shell">
+    <button type="button" className={`adm-backdrop${menuOpen ? ' is-visible' : ''}`} aria-label="Close menu" tabIndex={menuOpen ? 0 : -1} onClick={() => setMenuOpen(false)} />
+    <AdminSidebar open={menuOpen} onNavigate={() => setMenuOpen(false)} />
+    <div className="adm-main">
+      <AdminTopbar onMenuClick={() => setMenuOpen(true)} />
+      <main className="adm-body"><Outlet /></main>
+    </div>
+  </div>
 }

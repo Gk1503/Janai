@@ -1,10 +1,12 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import AdminComingSoon from './components/AdminComingSoon'
 import AdminLayout from './components/AdminLayout'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
 import ScrollToTop from './components/ScrollToTop'
 import { AuthProvider, CartProvider, ToastProvider } from './context/AppContexts'
 import AdminPage from './pages/AdminPage'
+import AdminProductsPage from './pages/AdminProductsPage'
 import { AboutPage, AdminLoginPage, ContactPage, ForgotPasswordPage, LoginPage, RegisterPage } from './pages/AccountPages'
 import BulkOrdersPage from './pages/BulkOrdersPage'
 import NotFoundPage from './pages/NotFoundPage'
@@ -37,6 +39,12 @@ export default function App() {
       <Route path="*" element={<NotFoundPage />} />
     </Route>
     <Route path="admin/login" element={<AdminLoginPage />} />
-    <Route element={<ProtectedRoute admin />}><Route element={<AdminLayout />}><Route path="admin" element={<AdminPage />} /></Route></Route>
+    <Route element={<ProtectedRoute admin />}>
+      <Route element={<AdminLayout />}>
+        <Route path="admin" element={<AdminPage />} />
+        <Route path="admin/products" element={<AdminProductsPage />} />
+        <Route path="admin/*" element={<AdminComingSoon />} />
+      </Route>
+    </Route>
   </Routes></BrowserRouter></CartProvider></AuthProvider></ToastProvider>
 }

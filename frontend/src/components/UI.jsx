@@ -1,17 +1,15 @@
-import { useState } from 'react'
-import { ArrowRight, Heart, Minus, PackageCheck, Plus, Star } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { ArrowRight, Heart, Minus, PackageCheck, Plus, Star, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useAuth, useCart, useToast } from '../context/AppContexts'
 
 const categoryImages = { Fruits: '/fruit.jpg', Vegetables: '/Vegatables.png', Groceries: '/grocery.jpg', 'Combo Packs': '/grocery.jpg', 'Seasonal Specials': '/fruit.jpg' }
 const fallbackImage = (product = {}) => categoryImages[product.category] || '/fruit.jpg'
 
-// Accepts local paths (/apple.jpg), bare file names (apple.jpg) and full http(s) URLs saved from the admin panel.
-export function productImage(product = {}) {
-  const image = String(product.images?.[0] || product.image || '').trim()
-  if (/^(https?:)?\/\//.test(image) || image.startsWith('/') || image.startsWith('data:image/')) return image
-  if (/\.(png|jpe?g|webp|gif|avif|svg)$/i.test(image)) return `/${image}`
-  return fallbackImage(product)
+export function productImage(product) {
+  const image = product.images?.[0] || product.image
+  const isUsable = typeof image === 'string' && (image.startsWith('/') || image.startsWith('data:image') || image.startsWith('http'))
+  return isUsable ? image : categoryImages[product.category] || '/fruit.jpg'
 }
 
 // Product photo that falls back to the category image if the stored URL is broken.
@@ -30,8 +28,22 @@ export function EmptyState({ icon: Icon = PackageCheck, title, message, action, 
   return <div className="empty-state"><span className="empty-icon"><Icon size={24} /></span><h2>{title}</h2><p>{message}</p>{action && <Link className="button button-primary" to={to}>{action}<ArrowRight size={16} /></Link>}</div>
 }
 
-export function QuantitySelector({ value, onChange, min = 1, max = 99, compact = false, label = 'quantity' }) {
-  return <div className={`quantity-selector${compact ? ' is-compact' : ''}`}><button type="button" aria-label={`Decrease ${label}`} disabled={value <= min} onClick={() => onChange(Math.max(min, value - 1))}><Minus size={15} /></button><span aria-live="polite">{value}</span><button type="button" aria-label={`Increase ${label}`} disabled={value >= max} onClick={() => onChange(Math.min(max, value + 1))}><Plus size={15} /></button></div>
+export function Modal({ title, onClose, children, wide = false }) {
+  useEffect(() => {
+    function onKeyDown(event) { if (event.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [onClose])
+  return <div className="adm-modal-overlay" role="presentation" onClick={onClose}>
+    <div className={`adm-modal${wide ? ' is-wide' : ''}`} role="dialog" aria-modal="true" aria-label={title} onClick={(event) => event.stopPropagation()}>
+      <div className="adm-modal-head"><h2>{title}</h2><button type="button" className="adm-icon-button" aria-label="Close" onClick={onClose}><X size={16} /></button></div>
+      <div className="adm-modal-body">{children}</div>
+    </div>
+  </div>
+}
+
+export function QuantitySelector({ value, onChange, min = 1, max = 99, compact = false }) {
+  return <div className={`quantity-selector${compact ? ' is-compact' : ''}`}><button type="button" aria-label="Decrease quantity" disabled={value <= min} onClick={() => onChange(Math.max(min, value - 1))}><Minus size={14} /></button><span>{value}</span><button type="button" aria-label="Increase quantity" disabled={value >= max} onClick={() => onChange(Math.min(max, value + 1))}><Plus size={14} /></button></div>
 }
 
 export function CategoryCard({ title, description, image, to }) {
