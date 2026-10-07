@@ -5,9 +5,11 @@ const addressSchema = new mongoose.Schema({
   label: { type: String, trim: true, default: 'Home' },
   recipient: { type: String, trim: true },
   phone: { type: String, trim: true },
+  house: { type: String, trim: true, default: '' },
   street: { type: String, required: true, trim: true },
-  city: { type: String, required: true, trim: true },
-  state: { type: String, required: true, trim: true },
+  landmark: { type: String, trim: true, default: '' },
+  city: { type: String, trim: true, default: '' },
+  state: { type: String, trim: true, default: '' },
   postalCode: { type: String, required: true, trim: true },
   isDefault: { type: Boolean, default: false },
 });

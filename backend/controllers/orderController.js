@@ -4,12 +4,15 @@ import Product from '../models/Product.js';
 import asyncHandler from '../utils/asyncHandler.js';
 
 const statuses = ['placed', 'confirmed', 'preparing', 'out_for_delivery', 'delivered', 'cancelled'];
+const timeSlots = ['8:00 AM - 10:00 AM', '10:00 AM - 12:00 PM', '12:00 PM - 2:00 PM', '2:00 PM - 4:00 PM', '4:00 PM - 6:00 PM', '6:00 PM - 8:00 PM'];
 
 export function createOrder(orderType = 'normal') {
   return asyncHandler(async (req, res) => {
-    const { deliveryAddress, deliveryDate, paymentMethod = 'cod' } = req.body;
-    const addressFields = ['recipient', 'phone', 'street', 'city', 'state', 'postalCode'];
+    const { deliveryAddress, deliveryDate, paymentMethod = 'cod', preferredTimeSlot = '', deliveryInstructions = '' } = req.body;
+    const addressFields = ['recipient', 'phone', 'street', 'postalCode'];
     if (!deliveryAddress || !addressFields.every((field) => String(deliveryAddress[field] || '').trim())) return res.status(400).json({ message: 'Complete every delivery address field.' });
+    if (preferredTimeSlot && !timeSlots.includes(preferredTimeSlot)) return res.status(400).json({ message: 'Choose a valid delivery time slot.' });
+    if (typeof deliveryInstructions !== 'string' || deliveryInstructions.length > 300) return res.status(400).json({ message: 'Keep delivery instructions under 300 characters.' });
     if (paymentMethod !== 'cod') return res.status(501).json({ message: 'Online payments are not available yet. Choose Cash on Delivery.' });
     const date = new Date(deliveryDate);
     if (!deliveryDate || Number.isNaN(date.getTime())) return res.status(400).json({ message: 'Choose a valid delivery date.' });
@@ -46,7 +49,7 @@ export function createOrder(orderType = 'normal') {
           reserved.push(item);
         }
       }
-      const order = await Order.create({ user: req.user.id, items: orderItems, totalAmount, orderType, deliveryAddress, deliveryDate: date, paymentMethod, paymentStatus: 'pending' });
+      const order = await Order.create({ user: req.user.id, items: orderItems, totalAmount, orderType, deliveryAddress, deliveryDate: date, preferredTimeSlot, deliveryInstructions: deliveryInstructions.trim(), paymentMethod, paymentStatus: 'pending' });
       if (cart) {
         cart.items = cart.items.filter((entry) => !items.some((item) => String(item.productId) === String(entry.product)));
         await cart.save();
