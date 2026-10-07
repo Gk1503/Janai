@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { ArrowRight, Heart, Minus, PackageCheck, Plus, Star } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { ArrowRight, Heart, Minus, PackageCheck, Plus, Star, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useAuth, useCart, useToast } from '../context/AppContexts'
 
@@ -14,6 +14,20 @@ export function Loader({ label = 'Loading Janai' }) { return <div className="loa
 
 export function EmptyState({ icon: Icon = PackageCheck, title, message, action, to = '/shop' }) {
   return <div className="empty-state"><span className="empty-icon"><Icon size={24} /></span><h2>{title}</h2><p>{message}</p>{action && <Link className="button button-primary" to={to}>{action}<ArrowRight size={16} /></Link>}</div>
+}
+
+export function Modal({ title, onClose, children, wide = false }) {
+  useEffect(() => {
+    function onKeyDown(event) { if (event.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [onClose])
+  return <div className="adm-modal-overlay" role="presentation" onClick={onClose}>
+    <div className={`adm-modal${wide ? ' is-wide' : ''}`} role="dialog" aria-modal="true" aria-label={title} onClick={(event) => event.stopPropagation()}>
+      <div className="adm-modal-head"><h2>{title}</h2><button type="button" className="adm-icon-button" aria-label="Close" onClick={onClose}><X size={16} /></button></div>
+      <div className="adm-modal-body">{children}</div>
+    </div>
+  </div>
 }
 
 export function QuantitySelector({ value, onChange, min = 1, max = 99, compact = false }) {
