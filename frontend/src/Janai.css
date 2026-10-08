@@ -685,16 +685,16 @@ h3 { font-size: 15px; }
 .adm-pagination button.active { border-color: var(--green); background: var(--green); color: #fff; }
 .adm-pagination button:disabled { cursor: not-allowed; opacity: .45; }
 
-/* Admin: Products page readability (scoped to this page only) */
-.adm-products-page .adm-page-head h1 { font-size: 27px; font-weight: 800; }
-.adm-products-page .adm-page-head p { font-size: 14px; }
-.adm-products-page .shop-search input { font-size: 14px; }
-.adm-products-page .sort-select select { font-size: 14px; font-weight: 600; }
-.adm-products-page .admin-table th, .adm-products-page .admin-table td { padding: 13px 10px; }
-.adm-products-page .admin-table th { font-size: 11px; font-weight: 800; }
-.adm-products-page .admin-table td { font-size: 13px; }
-.adm-products-page .status-pill { padding: 5px 10px; font-size: 10px; }
-.adm-products-page .table-action { padding: 6px 10px; font-size: 10px; }
+/* Admin: shared readable typography for admin list/data pages (Products, Categories, …) */
+.adm-products-page .adm-page-head h1, .adm-data-page .adm-page-head h1 { font-size: 27px; font-weight: 800; }
+.adm-products-page .adm-page-head p, .adm-data-page .adm-page-head p { font-size: 14px; }
+.adm-products-page .shop-search input, .adm-data-page .shop-search input { font-size: 14px; }
+.adm-products-page .sort-select select, .adm-data-page .sort-select select { font-size: 14px; font-weight: 600; }
+.adm-products-page .admin-table th, .adm-products-page .admin-table td, .adm-data-page .admin-table th, .adm-data-page .admin-table td { padding: 13px 10px; }
+.adm-products-page .admin-table th, .adm-data-page .admin-table th { font-size: 11px; font-weight: 800; }
+.adm-products-page .admin-table td, .adm-data-page .admin-table td { font-size: 13px; }
+.adm-products-page .status-pill, .adm-data-page .status-pill { padding: 5px 10px; font-size: 10px; }
+.adm-products-page .table-action, .adm-data-page .table-action { padding: 6px 10px; font-size: 10px; }
 
 /* Admin: modal */
 .adm-modal-overlay { position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; padding: 24px; background: rgba(23, 53, 31, .4); overflow-y: auto; }
@@ -752,11 +752,38 @@ h3 { font-size: 15px; }
 .adm-final-price-box strong { font-size: 20px; }
 
 .adm-form-note { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.adm-form-section-description { margin-top: -6px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+
+.adm-options-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-bottom: 14px; }
+.adm-option-card { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 18px; border: 1px solid #d9ead2; border-radius: 12px; background: #fff; }
+.adm-option-copy strong { display: block; font-size: 15px; color: var(--ink); }
+.adm-option-copy p { margin: 4px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.adm-option-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 18px; border: 1px solid #d9ead2; border-radius: 12px; background: #fff; }
+.adm-option-row strong { font-size: 14px; color: var(--ink); }
+.adm-option-row + .adm-option-row { margin-top: 10px; }
+
+.adm-switch { position: relative; flex: 0 0 auto; width: 48px; height: 28px; border: 0; border-radius: 99px; background: #cfe0c8; cursor: pointer; transition: background .15s ease; }
+.adm-switch-thumb { position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .25); transition: transform .15s ease; }
+.adm-switch.is-on { background: var(--green); }
+.adm-switch.is-on .adm-switch-thumb { transform: translateX(20px); }
+.adm-switch-field { display: flex; align-items: center; gap: 10px; }
+.adm-switch-state { font-size: 12px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.adm-field-hint { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; font-weight: 500; }
+
+.adm-vendor-list { display: grid; gap: 14px; margin-bottom: 14px; }
+.adm-vendor-card { display: grid; gap: 14px; padding: 16px; border: 1px solid #d9ead2; border-radius: 12px; background: #fff; }
+.adm-vendor-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.adm-vendor-card-head strong { font-size: 12px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--green); }
+.adm-vendor-card .adm-option-row { background: var(--page); }
+.adm-price-suffix { display: flex; align-items: center; gap: 8px; }
+.adm-price-suffix input { flex: 1; min-width: 0; }
+.adm-price-suffix small { flex: 0 0 auto; color: var(--muted); font-size: 11px; white-space: nowrap; }
 
 @media (max-width: 720px) {
-  .adm-form-grid, .adm-pricing-row, .adm-summary-row { grid-template-columns: 1fr; }
+  .adm-form-grid, .adm-pricing-row, .adm-summary-row, .adm-options-grid { grid-template-columns: 1fr; }
   .adm-image-upload { flex-direction: column; align-items: flex-start; }
   .adm-suggested-box, .adm-final-price-box { flex-direction: column; align-items: flex-start; }
+  .adm-option-card, .adm-option-row { padding: 14px; }
 }
 
 @media (max-width: 650px) {
@@ -766,4 +793,6 @@ h3 { font-size: 15px; }
 
 @media (max-width: 480px) {
   .adm-pricing-card, .adm-soft-section { padding: 14px; }
+  .adm-option-row { flex-wrap: wrap; }
 }
+
