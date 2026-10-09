@@ -41,7 +41,7 @@ export const updateProfile = asyncHandler(async (req, res) => {
 });
 
 export const addAddress = asyncHandler(async (req, res) => {
-  const fields = ['recipient', 'phone', 'street', 'city', 'state', 'postalCode'];
+  const fields = ['recipient', 'phone', 'street', 'postalCode'];
   if (!fields.every((field) => String(req.body[field] || '').trim())) return res.status(400).json({ message: 'Complete every address field.' });
   const isDefault = Boolean(req.body.isDefault) || !req.user.addresses.length;
   if (isDefault) req.user.addresses.forEach((address) => { address.isDefault = false; });

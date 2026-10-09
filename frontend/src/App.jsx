@@ -3,6 +3,7 @@ import AdminComingSoon from './components/AdminComingSoon'
 import AdminLayout from './components/AdminLayout'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
+import ScrollToTop from './components/ScrollToTop'
 import { AuthProvider, CartProvider, ToastProvider } from './context/AppContexts'
 import AdminPage from './pages/AdminPage'
 import AdminCategoriesPage from './pages/AdminCategoriesPage'
@@ -15,7 +16,7 @@ import { HomePage, ProductPage, ShopPage } from './pages/StorePages'
 import './Janai.css'
 
 export default function App() {
-  return <ToastProvider><AuthProvider><CartProvider><BrowserRouter><Routes>
+  return <ToastProvider><AuthProvider><CartProvider><BrowserRouter><ScrollToTop /><Routes>
     <Route element={<Layout />}>
       <Route index element={<HomePage />} />
       <Route path="shop" element={<ShopPage />} />

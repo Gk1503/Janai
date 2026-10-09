@@ -28,6 +28,7 @@ function Navbar() {
   const [query, setQuery] = useState('')
   const productPage = pathname.startsWith('/product/') || pathname.startsWith('/products/')
   const isHome = pathname === '/'
+  const shopPage = pathname === '/shop'
   const title = productPage ? 'Product Details' : pathname.startsWith('/orders/') ? 'Order Details' : titles[pathname] || 'Janai'
   const submit = (event) => {
     event.preventDefault()
@@ -45,17 +46,17 @@ function Navbar() {
       <Logo className="desktop-logo" />
       <nav className="desktop-links" aria-label="Main navigation">{navItems.map(({ to, label, end }) => <NavLink key={to} to={to} end={end}>{label}</NavLink>)}<NavLink to="/about">About</NavLink><NavLink to="/contact">Contact</NavLink></nav>
       <form className="nav-search" onSubmit={submit}><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search produce" aria-label="Search products" /><button aria-label="Submit search"><Search size={15} /></button></form>
-      <Link className="account-link" to={account}><CircleUserRound size={18} />{user ? 'Account' : 'Sign in'}</Link>
+      <Link className="account-link" to={account}><CircleUserRound size={18} /><span className="account-label">{user ? 'Account' : 'Sign in'}</span></Link>
       <CartLink />
     </div>
-    <form className="mobile-search" onSubmit={submit}><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search fruits, vegetables, groceries..." aria-label="Search products" /><button aria-label="Search"><Search size={16} /></button></form>
+    {!shopPage && <form className="mobile-search" onSubmit={submit}><Search size={17} /><input type="search" enterKeyHint="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search fruits, vegetables, groceries..." aria-label="Search products" /><button aria-label="Search"><Search size={17} /></button></form>}
     {menuOpen && <nav className="mobile-menu" aria-label="More navigation">{[...navItems, { to: '/about', label: 'About' }, { to: '/contact', label: 'Contact' }].map(({ to, label }) => <NavLink key={to} to={to} onClick={() => setMenuOpen(false)}>{label}<ArrowLeft size={14} /></NavLink>)}</nav>}
   </header>
 }
 
 function MobileBottomNav() {
   const { user } = useAuth()
-  return <nav className="mobile-bottom-nav" aria-label="Mobile navigation">{[...navItems, { to: user ? '/profile' : '/login', label: 'Account', icon: CircleUserRound }].map(({ to, label, icon: Icon, end }) => <NavLink key={label} to={to} end={end} className={({ isActive }) => `bottom-nav-link${isActive ? ' active' : ''}`}><Icon size={19} /><span>{label}</span></NavLink>)}</nav>
+  return <nav className="mobile-bottom-nav" aria-label="Mobile navigation">{[...navItems, { to: user ? '/profile' : '/login', label: 'Account', icon: CircleUserRound }].map(({ to, label, icon: Icon, end }) => <NavLink key={label} to={to} end={end} className={({ isActive }) => `bottom-nav-link${isActive ? ' active' : ''}`}>{({ isActive }) => <><Icon size={22} strokeWidth={isActive ? 2.4 : 2} /><span>{label}</span></>}</NavLink>)}</nav>
 }
 
 function Footer() {
