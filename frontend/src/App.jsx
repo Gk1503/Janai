@@ -6,6 +6,7 @@ import ProtectedRoute from './components/ProtectedRoute'
 import ScrollToTop from './components/ScrollToTop'
 import { AuthProvider, CartProvider, ToastProvider } from './context/AppContexts'
 import AdminPage from './pages/AdminPage'
+import AdminCategoriesPage from './pages/AdminCategoriesPage'
 import AdminProductsPage from './pages/AdminProductsPage'
 import { AboutPage, AdminLoginPage, ContactPage, ForgotPasswordPage, LoginPage, RegisterPage } from './pages/AccountPages'
 import BulkOrdersPage from './pages/BulkOrdersPage'
@@ -43,6 +44,7 @@ export default function App() {
       <Route element={<AdminLayout />}>
         <Route path="admin" element={<AdminPage />} />
         <Route path="admin/products" element={<AdminProductsPage />} />
+        <Route path="admin/categories" element={<AdminCategoriesPage />} />
         <Route path="admin/*" element={<AdminComingSoon />} />
       </Route>
     </Route>

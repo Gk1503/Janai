@@ -3,7 +3,7 @@ import { Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import api, { getApiError } from '../services/api'
 import { useToast } from '../context/AppContexts'
 import { EmptyState, Loader, Modal, productImage } from '../components/UI'
-import ProductFormModal, { PRODUCT_CATEGORIES } from '../components/ProductFormModal'
+import ProductFormModal from '../components/ProductFormModal'
 
 const PAGE_SIZE = 10
 const STATUS_FILTERS = [
@@ -22,6 +22,7 @@ function productStatus(product) {
 export default function AdminProductsPage() {
   const toast = useToast()
   const [products, setProducts] = useState([])
+  const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [searchInput, setSearchInput] = useState('')
@@ -53,6 +54,7 @@ export default function AdminProductsPage() {
   useEffect(() => { load() }, [category, search])
   useEffect(() => { setPage(1) }, [category, search, status])
   useEffect(() => () => window.clearTimeout(searchTimer.current), [])
+  useEffect(() => { api.get('/categories').then(({ data }) => setCategories(data.categories)).catch(() => {}) }, [])
 
   function onSearchInput(value) {
     setSearchInput(value)
@@ -95,7 +97,7 @@ export default function AdminProductsPage() {
     <section className="adm-panel adm-toolbar-panel">
       <div className="adm-toolbar">
         <label className="shop-search"><Search size={16} /><input value={searchInput} onChange={(event) => onSearchInput(event.target.value)} placeholder="Search products…" aria-label="Search products" /></label>
-        <label className="sort-select"><select value={category} onChange={(event) => setCategory(event.target.value)} aria-label="Filter by category"><option value="All">All categories</option>{PRODUCT_CATEGORIES.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+        <label className="sort-select"><select value={category} onChange={(event) => setCategory(event.target.value)} aria-label="Filter by category"><option value="All">All categories</option>{categories.map((item) => <option key={item._id} value={item.name}>{item.name}</option>)}</select></label>
         <label className="sort-select"><select value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Filter by status">{STATUS_FILTERS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
         {filtersActive && <button type="button" className="filter-reset" onClick={resetFilters}>Clear filters</button>}
       </div>

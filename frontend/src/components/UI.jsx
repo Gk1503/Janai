@@ -3,8 +3,7 @@ import { ArrowRight, Heart, Minus, PackageCheck, Plus, Star, X } from 'lucide-re
 import { Link } from 'react-router-dom'
 import { useAuth, useCart, useToast } from '../context/AppContexts'
 
-const categoryImages = { Fruits: '/fruit.jpg', Vegetables: '/Vegatables.png', Groceries: '/grocery.jpg', 'Combo Packs': '/grocery.jpg', 'Seasonal Specials': '/fruit.jpg' }
-const fallbackImage = (product = {}) => categoryImages[product.category] || '/fruit.jpg'
+export const categoryImages = { Fruits: '/fruit.jpg', Vegetables: '/Vegatables.png', Groceries: '/grocery.jpg', 'Combo Packs': '/grocery.jpg', 'Seasonal Specials': '/fruit.jpg' }
 
 export function productImage(product) {
   const image = product.images?.[0] || product.image
