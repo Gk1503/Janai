@@ -6,6 +6,7 @@ import ProtectedRoute from './components/ProtectedRoute'
 import ScrollToTop from './components/ScrollToTop'
 import { AuthProvider, CartProvider, ToastProvider } from './context/AppContexts'
 import AdminPage from './pages/AdminPage'
+import AdminCategoriesPage from './pages/AdminCategoriesPage'
 import AdminProductsPage from './pages/AdminProductsPage'
 import { AdminBulkOrdersPage, AdminOrdersPage, AdminPreOrdersPage } from './pages/AdminOrderPages'
 import { AboutPage, AdminLoginPage, ContactPage, ForgotPasswordPage, LoginPage, RegisterPage } from './pages/AccountPages'
@@ -51,6 +52,7 @@ export default function App() {
         <Route path="admin/pre-orders/scheduled" element={<AdminPreOrdersPage key="pre-scheduled" view="scheduled" />} />
         <Route path="admin/bulk-orders" element={<AdminBulkOrdersPage key="bulk-all" view="all" />} />
         <Route path="admin/bulk-orders/requests" element={<AdminBulkOrdersPage key="bulk-requests" view="requests" />} />
+        <Route path="admin/categories" element={<AdminCategoriesPage />} />
         <Route path="admin/*" element={<AdminComingSoon />} />
       </Route>
     </Route>

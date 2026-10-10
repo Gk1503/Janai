@@ -1,10 +1,9 @@
-import { useRef, useState } from 'react'
-import { IndianRupee, Image as ImageIcon, Save, Upload } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { IndianRupee, Image as ImageIcon, Plus, Save, Store, Trash2, Upload } from 'lucide-react'
 import api, { getApiError } from '../services/api'
 import { useToast } from '../context/AppContexts'
 import { Modal } from './UI'
 
-export const PRODUCT_CATEGORIES = ['Fruits', 'Vegetables', 'Groceries', 'Combo Packs', 'Seasonal Specials']
 const UNIT_OPTIONS = [
   { value: 'kg', label: 'Kilogram (kg)' },
   { value: 'g', label: 'Gram (g)' },
@@ -15,12 +14,12 @@ const UNIT_OPTIONS = [
   { value: 'pack', label: 'Pack' },
 ]
 const GST_RATES = [0, 5, 12, 18, 28]
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024
+export const MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
 function toFormState(product) {
   return {
     name: product?.name || '',
-    category: product?.category || PRODUCT_CATEGORIES[0],
+    category: product?.category || '',
     description: product?.description || '',
     price: product?.price ?? '',
     unit: product?.unit || UNIT_OPTIONS[0].value,
@@ -31,12 +30,26 @@ function toFormState(product) {
   }
 }
 
-function capitalizeFirst(value) {
+function emptyVendor() {
+  return {
+    id: Math.random().toString(36).slice(2),
+    name: '',
+    purchasePrice: '',
+    moq: '',
+    leadTime: '',
+    preferred: false,
+    lastPurchasePrice: '',
+    lastPurchaseDate: '',
+    notes: '',
+  }
+}
+
+export function capitalizeFirst(value) {
   const trimmed = value.trim()
   return trimmed ? trimmed[0].toUpperCase() + trimmed.slice(1) : trimmed
 }
 
-function readImageAsDataUrl(file, maxDimension = 900, quality = 0.82) {
+export function readImageAsDataUrl(file, maxDimension = 900, quality = 0.82) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onerror = () => reject(reader.error)
@@ -60,16 +73,25 @@ function readImageAsDataUrl(file, maxDimension = 900, quality = 0.82) {
 export default function ProductFormModal({ product, onClose, onSaved }) {
   const toast = useToast()
   const [form, setForm] = useState(() => toFormState(product))
+  const [categories, setCategories] = useState([])
   const [imagePreview, setImagePreview] = useState(product?.images?.[0] || '')
   const [imageError, setImageError] = useState('')
   const [purchasePrice, setPurchasePrice] = useState('')
   const [fixedAmount, setFixedAmount] = useState('')
   const [profitPercent, setProfitPercent] = useState('')
   const [gstRate, setGstRate] = useState(0)
+  const [vendors, setVendors] = useState(() => [emptyVendor()])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const fileInputRef = useRef(null)
   const isEdit = Boolean(product?._id)
+
+  useEffect(() => {
+    api.get('/categories').then(({ data }) => {
+      setCategories(data.categories)
+      setForm((current) => current.category ? current : { ...current, category: data.categories.find((category) => category.status === 'Active')?.name || '' })
+    }).catch(() => {})
+  }, [])
 
   function setField(field, value) {
     setForm((current) => ({ ...current, [field]: value }))
@@ -90,6 +112,19 @@ export default function ProductFormModal({ product, onClose, onSaved }) {
     }
   }
 
+  function updateVendor(id, field, value) {
+    setVendors((current) => current.map((vendor) => (vendor.id === id ? { ...vendor, [field]: value } : vendor)))
+  }
+  function togglePreferredVendor(id) {
+    setVendors((current) => current.map((vendor) => ({ ...vendor, preferred: vendor.id === id ? !vendor.preferred : false })))
+  }
+  function addVendor() {
+    setVendors((current) => [...current, emptyVendor()])
+  }
+  function removeVendor(id) {
+    setVendors((current) => current.filter((vendor) => vendor.id !== id))
+  }
+
   const purchase = Number(purchasePrice) || 0
   const selling = Number(form.price) || 0
   const suggested = purchase + (Number(fixedAmount) || 0) + (purchase * (Number(profitPercent) || 0)) / 100
@@ -98,6 +133,11 @@ export default function ProductFormModal({ product, onClose, onSaved }) {
   const marginPct = selling > 0 ? (profitAmount / selling) * 100 : 0
   const finalPriceInclGst = selling * (1 + (Number(gstRate) || 0) / 100)
   const summaryTone = (value) => (value > 0 ? ' is-positive' : value < 0 ? ' is-negative' : '')
+
+  const activeCategories = categories.filter((category) => category.status === 'Active')
+  const categoryOptions = activeCategories.some((category) => category.name === form.category) || !form.category
+    ? activeCategories
+    : [{ name: form.category }, ...activeCategories]
 
   async function submit(event) {
     event.preventDefault()
@@ -124,7 +164,7 @@ export default function ProductFormModal({ product, onClose, onSaved }) {
         <div className="adm-soft-section">
           <div className="adm-form-grid">
             <label className="field field-wide"><span>Product name</span><input required value={form.name} onChange={(event) => setField('name', event.target.value)} onBlur={() => setField('name', capitalizeFirst(form.name))} placeholder="e.g. Potato" /></label>
-            <label className="field"><span>Category</span><select value={form.category} onChange={(event) => setField('category', event.target.value)}>{PRODUCT_CATEGORIES.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+            <label className="field"><span>Category</span><select required value={form.category} onChange={(event) => setField('category', event.target.value)}>{!categoryOptions.length && <option value="">Loading categories…</option>}{categoryOptions.map((category) => <option key={category.name} value={category.name}>{category.name}</option>)}</select></label>
             <label className="field"><span>Unit</span><select required value={form.unit} onChange={(event) => setField('unit', event.target.value)}>{UNIT_OPTIONS.map((unit) => <option key={unit.value} value={unit.value}>{unit.label}</option>)}</select></label>
             <label className="field"><span>Stock</span><input required type="number" min="0" value={form.stock} onChange={(event) => setField('stock', event.target.value)} /></label>
             <label className="field field-wide"><span>Description</span><textarea required rows="4" value={form.description} onChange={(event) => setField('description', event.target.value)} placeholder="Describe the product here…" /></label>
@@ -182,11 +222,61 @@ export default function ProductFormModal({ product, onClose, onSaved }) {
       </div>
 
       <div className="adm-form-section">
-        <span className="adm-modal-section-title">Availability &amp; product options</span>
-        <div className="admin-checkboxes">
-          <label><input type="checkbox" checked={form.preOrderAvailable} onChange={(event) => setField('preOrderAvailable', event.target.checked)} />Pre-order available</label>
-          <label><input type="checkbox" checked={form.bulkAvailable} onChange={(event) => setField('bulkAvailable', event.target.checked)} />Bulk order available</label>
-          <label><input type="checkbox" checked={form.featured} onChange={(event) => setField('featured', event.target.checked)} />Featured</label>
+        <span className="adm-modal-section-title">Product options</span>
+        <div className="adm-soft-section">
+          <div className="adm-options-grid">
+            <div className="adm-option-card">
+              <div className="adm-option-copy"><strong>Pre-order available</strong><p>Customers can schedule this product for a future delivery date.</p></div>
+              <button type="button" role="switch" aria-checked={form.preOrderAvailable} aria-label="Pre-order available" className={`adm-switch${form.preOrderAvailable ? ' is-on' : ''}`} onClick={() => setField('preOrderAvailable', !form.preOrderAvailable)}><span className="adm-switch-thumb" /></button>
+            </div>
+            <div className="adm-option-card">
+              <div className="adm-option-copy"><strong>Bulk order available</strong><p>This product can be requested through Janai's bulk order form.</p></div>
+              <button type="button" role="switch" aria-checked={form.bulkAvailable} aria-label="Bulk order available" className={`adm-switch${form.bulkAvailable ? ' is-on' : ''}`} onClick={() => setField('bulkAvailable', !form.bulkAvailable)}><span className="adm-switch-thumb" /></button>
+            </div>
+          </div>
+          <div className="adm-option-row">
+            <strong>Featured</strong>
+            <button type="button" role="switch" aria-checked={form.featured} aria-label="Featured" className={`adm-switch${form.featured ? ' is-on' : ''}`} onClick={() => setField('featured', !form.featured)}><span className="adm-switch-thumb" /></button>
+          </div>
+        </div>
+      </div>
+
+      <div className="adm-form-section">
+        <div className="adm-form-section-head"><Store size={16} /><h3>Vendor &amp; Procurement</h3></div>
+        <p className="adm-form-section-description">Manage the suppliers you purchase this product from, including purchase price, minimum order quantity, delivery time, and procurement details.</p>
+        <div className="adm-soft-section">
+          <div className="adm-vendor-list">
+            {vendors.map((vendor, index) => <div className="adm-vendor-card" key={vendor.id}>
+              <div className="adm-vendor-card-head">
+                <strong>Vendor {index + 1}</strong>
+                <button type="button" className="adm-icon-button" aria-label={`Remove vendor ${index + 1}`} onClick={() => removeVendor(vendor.id)}><Trash2 size={15} /></button>
+              </div>
+
+              <div className="adm-form-grid">
+                <label className="field field-wide"><span>Vendor / supplier name</span><input value={vendor.name} onChange={(event) => updateVendor(vendor.id, 'name', event.target.value)} placeholder="e.g. Rajesh Vegetable Supplier" /></label>
+                <label className="field">
+                  <span>Purchase price (₹)</span>
+                  <div className="adm-price-suffix"><input type="number" min="0" step="0.01" value={vendor.purchasePrice} onChange={(event) => updateVendor(vendor.id, 'purchasePrice', event.target.value)} placeholder="e.g. 45" /><small>/ {form.unit}</small></div>
+                </label>
+                <label className="field"><span>Minimum order quantity</span><input value={vendor.moq} onChange={(event) => updateVendor(vendor.id, 'moq', event.target.value)} placeholder={`e.g. 20 ${form.unit}`} /></label>
+                <label className="field"><span>Lead time</span><input value={vendor.leadTime} onChange={(event) => updateVendor(vendor.id, 'leadTime', event.target.value)} placeholder="e.g. 1 Day" /></label>
+                <label className="field"><span>Last purchase price (₹)</span><input type="number" min="0" step="0.01" value={vendor.lastPurchasePrice} onChange={(event) => updateVendor(vendor.id, 'lastPurchasePrice', event.target.value)} placeholder="e.g. 43" /></label>
+                <label className="field"><span>Last purchase date</span><input type="date" value={vendor.lastPurchaseDate} onChange={(event) => updateVendor(vendor.id, 'lastPurchaseDate', event.target.value)} /></label>
+                <label className="field field-wide"><span>Procurement notes</span><textarea rows="2" value={vendor.notes} onChange={(event) => updateVendor(vendor.id, 'notes', event.target.value)} placeholder="Add notes about purchasing, quality, delivery preferences, or supplier-specific instructions…" /></label>
+              </div>
+
+              {vendor.purchasePrice && <button type="button" className="text-link" onClick={() => setPurchasePrice(vendor.purchasePrice)}>Use as pricing purchase price</button>}
+
+              <div className="adm-option-row">
+                <div className="adm-option-copy"><strong>Preferred vendor</strong><p>Use this supplier as the primary vendor for this product.</p></div>
+                <button type="button" role="switch" aria-checked={vendor.preferred} aria-label={`Preferred vendor ${index + 1}`} className={`adm-switch${vendor.preferred ? ' is-on' : ''}`} onClick={() => togglePreferredVendor(vendor.id)}><span className="adm-switch-thumb" /></button>
+              </div>
+            </div>)}
+          </div>
+
+          <button type="button" className="text-link" onClick={addVendor}><Plus size={15} /> {vendors.length ? 'Add Another Vendor' : 'Add Vendor'}</button>
+
+          <p className="adm-form-note">Vendor details are not saved yet — there's no Vendor/Supplier module in Janai today. See the implementation notes shared alongside this update for what's needed to make this permanent. Last purchase price/date are manual notes; Janai doesn't track procurement history automatically.</p>
         </div>
       </div>
 

@@ -1,0 +1,27 @@
+*   [33md0cb85c[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mChanges-Done[m[33m)[m Merge branch 'main' into Changes-Done
+[31m|[m[32m\[m  
+[31m|[m *   [33me9fe8ce[m[33m ([m[1;31morigin/main[m[33m, [m[1;32mmain[m[33m)[m Merge pull request #5 from preetii0603/update-product
+[31m|[m [33m|[m[34m\[m  
+[31m|[m [33m|[m * [33m0e938fe[m update add product
+[31m|[m * [34m|[m [33m8af4c09[m Merge pull request #4 from preetii0603/admin-product-section
+[31m|[m [35m|[m[34m\[m[34m|[m 
+[31m|[m [35m|[m * [33m119f54e[m admin product
+[31m|[m * [36m|[m   [33mb4d48be[m Merge pull request #3 from preetii0603/admin-panel
+[31m|[m [36m|[m[1;32m\[m [36m\[m  
+[31m|[m [36m|[m [1;32m|[m[36m/[m  
+[31m|[m [36m|[m[36m/[m[1;32m|[m   
+[31m|[m [36m|[m * [33m4c677c8[m admin
+* [36m|[m [1;32m|[m [33m9269c2a[m changes in design
+[36m|[m[36m/[m [1;32m/[m  
+* [1;32m/[m [33m623cebf[m Admin Pannel Setu done
+[1;32m|[m[1;32m/[m  
+*   [33m0f7e9d8[m Merge pull request #2 from Nupur1585/home-page-setup
+[1;33m|[m[1;34m\[m  
+[1;33m|[m * [33m193a25a[m home page designe
+[1;33m|[m[1;33m/[m  
+*   [33m31a3352[m Merge pull request #1 from preetii0603/frontend-folder-set-up
+[1;35m|[m[1;36m\[m  
+[1;35m|[m * [33mfc5700c[m frontend set up
+[1;35m|[m[1;35m/[m  
+* [33m4bb41d5[m Backend Setup done
+* [33m57bd621[m Basic Setup Created
