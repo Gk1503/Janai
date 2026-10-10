@@ -1,4 +1,4 @@
-import { BarChart3, Bell, CalendarDays, CreditCard, IndianRupee, LayoutDashboard, Package, Settings, ShoppingBag, Tags, Truck, UserRoundCheck, Users } from 'lucide-react'
+import { BarChart3, Bell, Bike, Boxes, CalendarClock, CalendarDays, ChefHat, CircleX, Clock, CreditCard, Inbox, IndianRupee, LayoutDashboard, Package, PackageCheck, Settings, ShoppingBag, Tags, Truck, UserRoundCheck, Users } from 'lucide-react'
 
 export const adminNavigation = [
   {
@@ -11,8 +11,26 @@ export const adminNavigation = [
   {
     label: 'ORDERS',
     items: [
-      { label: 'Orders', path: '/admin/orders', icon: ShoppingBag },
-      { label: 'Pre Orders', path: '/admin/pre-orders', icon: CalendarDays },
+      { label: 'All Orders', path: '/admin/orders', end: true, icon: ShoppingBag },
+      { label: 'Pending', path: '/admin/orders/pending', icon: Clock },
+      { label: 'Processing', path: '/admin/orders/processing', icon: ChefHat },
+      { label: 'Out for Delivery', path: '/admin/orders/out-for-delivery', icon: Bike },
+      { label: 'Delivered', path: '/admin/orders/delivered', icon: PackageCheck },
+      { label: 'Cancelled', path: '/admin/orders/cancelled', icon: CircleX },
+    ],
+  },
+  {
+    label: 'PRE ORDERS',
+    items: [
+      { label: 'All Pre Orders', path: '/admin/pre-orders', end: true, icon: CalendarDays },
+      { label: 'Scheduled', path: '/admin/pre-orders/scheduled', icon: CalendarClock },
+    ],
+  },
+  {
+    label: 'BULK ORDERS',
+    items: [
+      { label: 'All Bulk Orders', path: '/admin/bulk-orders', end: true, icon: Boxes },
+      { label: 'Requests', path: '/admin/bulk-orders/requests', icon: Inbox },
     ],
   },
   {

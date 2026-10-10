@@ -958,6 +958,81 @@ h3 { font-size: 16px; }
 .adm-products-page .status-pill, .adm-data-page .status-pill { padding: 5px 10px; font-size: 10px; }
 .adm-products-page .table-action, .adm-data-page .table-action { padding: 6px 10px; font-size: 10px; }
 
+/* Admin: orders, pre-orders and bulk orders (shares the Products page styles above) */
+.adm-count-chip { align-self: center; padding: 7px 12px; border-radius: 99px; background: var(--light-green); color: var(--muted); font-size: 13px; white-space: nowrap; }
+.adm-count-chip strong { color: var(--green); }
+.adm-orders-page .admin-table td { vertical-align: middle; }
+.adm-link-button { padding: 0; border: 0; background: transparent; color: var(--green); font: 800 13px Manrope, sans-serif; cursor: pointer; }
+.adm-link-button:hover { text-decoration: underline; }
+.adm-cell-stack { display: grid; gap: 2px; }
+.adm-cell-stack small { color: var(--muted); font-size: 11.5px; }
+.adm-cell-wrap { display: block; min-width: 140px; max-width: 240px; white-space: normal; line-height: 1.45; }
+.adm-row-actions { display: inline-flex; flex-wrap: nowrap; gap: 6px; }
+/* Actions stay in view when a wide order table scrolls sideways (tablet widths) */
+.adm-orders-page .admin-table th:last-child, .adm-orders-page .admin-table td:last-child { position: sticky; right: 0; z-index: 1; background: #fff; box-shadow: -8px 0 10px -8px rgba(23, 53, 31, .18); }
+.adm-product-lines { display: grid; gap: 2px; min-width: 130px; white-space: normal; line-height: 1.4; }
+.adm-product-lines small { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.adm-orders-page .admin-table th, .adm-orders-page .admin-table td { padding-inline: 8px; }
+.adm-orders-page .table-action { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; margin: 0; cursor: pointer; }
+.table-action.is-primary { background: var(--green); color: #fff; }
+.table-action.is-primary:hover:not(:disabled) { background: var(--green-hover, #135c31); }
+.table-action:disabled { cursor: not-allowed; opacity: .55; }
+.status-out_for_delivery { background: #e2f3f1; color: #23685f; }
+.status-delivered, .status-approved, .status-completed, .status-payment-paid { background: #e3f3dc; color: var(--green); }
+.status-payment-pending { background: #fff1d4; color: #8d6216; }
+.status-payment-failed { background: #fff0ed; color: #a24838; }
+
+/* Order / request detail modal */
+.adm-detail-section { display: grid; align-content: start; gap: 10px; }
+.adm-modal-section-title { display: flex; align-items: center; gap: 6px; }
+.adm-detail-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 16px; margin: 0; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--page); }
+.adm-detail-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 16px; }
+.adm-detail-list { display: grid; gap: 8px; margin: 0; }
+.adm-detail-row { display: grid; gap: 2px; }
+.adm-detail-list .adm-detail-row { grid-template-columns: 110px minmax(0, 1fr); gap: 10px; }
+.adm-detail-row dt { color: var(--muted); font-size: 12px; font-weight: 700; }
+.adm-detail-row dd { margin: 0; color: var(--ink); font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; }
+.adm-summary-list .adm-detail-row dd { text-align: right; }
+.adm-detail-total { padding-top: 8px; border-top: 1px solid var(--line); }
+.adm-detail-total dt { color: var(--ink); font-size: 13.5px; }
+.adm-detail-total dd { color: var(--green) !important; font-size: 17px !important; font-weight: 800 !important; }
+.adm-detail-text { color: var(--ink); font-size: 13.5px; line-height: 1.55; }
+.adm-inline-link { display: inline-flex; align-items: center; gap: 5px; color: var(--green); }
+.adm-muted { color: var(--muted); font-size: 12.5px; }
+.adm-note { display: flex; gap: 8px; padding: 12px; border-radius: 10px; background: var(--cream, #fff9ec); color: #5f4a1f; font-size: 13px; line-height: 1.5; }
+.adm-note svg { flex: 0 0 auto; margin-top: 2px; }
+.adm-order-items { display: grid; margin: 0; padding: 0; list-style: none; border: 1px solid var(--line); border-radius: 12px; }
+.adm-order-items li { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px 12px; border-top: 1px solid var(--line); font-size: 13.5px; }
+.adm-order-items li:first-child { border-top: 0; }
+.adm-order-items img { width: 44px; height: 44px; border-radius: 9px; object-fit: cover; background: var(--light-green); }
+.adm-bulk-items li { grid-template-columns: minmax(0, 1fr) auto; }
+.adm-status-editor { padding-top: 14px; border-top: 1px solid var(--line); }
+.adm-status-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.adm-status-row .sort-select { flex: 1 1 200px; }
+.adm-status-row .sort-select select { width: 100%; }
+.adm-confirm-box { display: grid; gap: 10px; padding: 12px; border: 1px solid #efd0c9; border-radius: 10px; background: #fff6f3; font-size: 13.5px; }
+
+/* Phones: order tables become one labelled card per row instead of a wide scrolling table */
+@media (max-width: 720px) {
+  .adm-responsive-table, .adm-responsive-table tbody, .adm-responsive-table tr, .adm-responsive-table td { display: block; width: 100%; }
+  .adm-responsive-table { white-space: normal; }
+  .adm-responsive-table thead { display: none; }
+  .adm-responsive-table tr { margin-bottom: 10px; padding: 4px 12px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+  .adm-orders-page .adm-responsive-table td { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 8px 0; border-bottom: 1px solid #eef2eb; font-size: 13.5px; text-align: right; }
+  .adm-responsive-table td:last-child { position: static; border-bottom: 0; box-shadow: none; }
+  .adm-responsive-table td::before { flex: 0 0 auto; content: attr(data-label); color: var(--muted); font-size: 12px; font-weight: 700; text-align: left; }
+  .adm-responsive-table .adm-cell-stack, .adm-responsive-table .adm-product-lines { justify-items: end; min-width: 0; }
+  .adm-responsive-table .adm-cell-wrap { min-width: 0; max-width: 62%; }
+  .adm-responsive-table .adm-col-actions::before { display: none; }
+  .adm-responsive-table .adm-col-actions .adm-row-actions { width: 100%; }
+  .adm-responsive-table .adm-col-actions .table-action { flex: 1; justify-content: center; min-height: 40px; font-size: 13px; }
+  .adm-orders-page .admin-table-wrap { overflow: visible; }
+  .adm-count-chip { align-self: flex-start; }
+  .adm-detail-grid, .adm-detail-columns { grid-template-columns: 1fr; }
+  .adm-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .adm-status-row .button { flex: 1 1 100%; }
+}
+
 /* Admin: modal */
 .adm-modal-overlay { position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; padding: 24px; background: rgba(23, 53, 31, .4); overflow-y: auto; }
 .adm-modal { width: min(560px, 100%); max-height: calc(100vh - 48px); overflow-y: auto; border-radius: 14px; background: #fff; box-shadow: 0 20px 60px rgba(0, 0, 0, .18); }

@@ -65,12 +65,12 @@ export function createOrder(orderType = 'normal') {
 export const listOrders = asyncHandler(async (req, res) => {
   const filter = req.user.role === 'admin' ? {} : { user: req.user.id };
   if (req.query.type) filter.orderType = req.query.type;
-  const orders = await Order.find(filter).populate('user', 'firstName lastName email').sort({ createdAt: -1 });
+  const orders = await Order.find(filter).populate('user', 'firstName lastName email phone').sort({ createdAt: -1 });
   res.json({ orders });
 });
 
 export const getOrder = asyncHandler(async (req, res) => {
-  const order = await Order.findById(req.params.id).populate('user', 'firstName lastName email');
+  const order = await Order.findById(req.params.id).populate('user', 'firstName lastName email phone');
   if (!order) return res.status(404).json({ message: 'Order not found.' });
   if (req.user.role !== 'admin' && String(order.user.id) !== String(req.user.id)) return res.status(403).json({ message: 'You cannot view this order.' });
   res.json({ order });
