@@ -7,6 +7,7 @@ import ScrollToTop from './components/ScrollToTop'
 import { AuthProvider, CartProvider, ToastProvider } from './context/AppContexts'
 import AdminPage from './pages/AdminPage'
 import AdminProductsPage from './pages/AdminProductsPage'
+import { AdminBulkOrdersPage, AdminOrdersPage, AdminPreOrdersPage } from './pages/AdminOrderPages'
 import { AboutPage, AdminLoginPage, ContactPage, ForgotPasswordPage, LoginPage, RegisterPage } from './pages/AccountPages'
 import BulkOrdersPage from './pages/BulkOrdersPage'
 import NotFoundPage from './pages/NotFoundPage'
@@ -43,6 +44,13 @@ export default function App() {
       <Route element={<AdminLayout />}>
         <Route path="admin" element={<AdminPage />} />
         <Route path="admin/products" element={<AdminProductsPage />} />
+        {/* key makes each sub-view a fresh page, so filters and pagination don't carry over between them */}
+        <Route path="admin/orders" element={<AdminOrdersPage key="orders-all" view="all" />} />
+        {['pending', 'processing', 'out-for-delivery', 'delivered', 'cancelled'].map((view) => <Route key={view} path={`admin/orders/${view}`} element={<AdminOrdersPage key={`orders-${view}`} view={view} />} />)}
+        <Route path="admin/pre-orders" element={<AdminPreOrdersPage key="pre-all" view="all" />} />
+        <Route path="admin/pre-orders/scheduled" element={<AdminPreOrdersPage key="pre-scheduled" view="scheduled" />} />
+        <Route path="admin/bulk-orders" element={<AdminBulkOrdersPage key="bulk-all" view="all" />} />
+        <Route path="admin/bulk-orders/requests" element={<AdminBulkOrdersPage key="bulk-requests" view="requests" />} />
         <Route path="admin/*" element={<AdminComingSoon />} />
       </Route>
     </Route>
