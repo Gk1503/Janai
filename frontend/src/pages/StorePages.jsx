@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
-import { ArrowRight, BadgePercent, CalendarDays, ChevronDown, Heart, Leaf, Search, ShieldCheck, ShoppingBag, Sprout, Star, Truck, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { ArrowRight, BadgePercent, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Heart, Leaf, Search, ShieldCheck, ShoppingBag, Sprout, Star, Truck, X } from 'lucide-react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import api, { getApiError } from '../services/api'
 import { useAuth, useCart, useToast } from '../context/AppContexts'
-import { CategoryCard, EmptyState, formatPrice, Loader, ProductBadges, ProductCard, ProductImage, QuantitySelector } from '../components/UI'
+import { CategoryCard, EmptyState, formatPrice, Loader, ProductBadges, ProductCard, productImages, QuantitySelector } from '../components/UI'
 
 const benefits = [
   { icon: Sprout, title: 'Farm Fresh Quality', text: 'Picked from trusted farms' },
@@ -94,8 +94,11 @@ export function ProductPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
+  const [activeImage, setActiveImage] = useState(0)
+  const touchStartX = useRef(null)
   useEffect(() => {
     setLoading(true)
+    setActiveImage(0)
     api.get(`/products/${id}`).then(({ data }) => {
       setProduct(data.product)
       return api.get('/products', { params: { category: data.product.category, limit: 5 } })
@@ -113,7 +116,18 @@ export function ProductPage() {
   }
   if (loading) return <div className="page-container"><Loader /></div>
   if (error || !product) return <div className="page-container"><EmptyState title="Product not found" message={error || 'This product may have been removed.'} action="Return to shop" /></div>
-  return <div className="page-container product-detail-page"><div className="breadcrumbs"><Link to="/shop">Shop</Link><span>›</span><span>{product.category}</span></div><div className="product-detail"><div className="product-detail-image"><ProductImage product={product} loading="eager" /><button type="button" className={`wishlist-button detail-heart${saved ? ' saved' : ''}`} onClick={toggleSaved} aria-label="Toggle wishlist"><Heart size={19} fill={saved ? 'currentColor' : 'none'} /></button><ProductBadges product={product} /></div><div className="product-detail-copy"><span className="eyebrow">{product.category}</span><h1>{product.name}</h1><div className="detail-rating"><Star size={15} fill="currentColor" />{Number(product.rating || 0).toFixed(1)} ({product.reviews || 0} reviews)</div><div className="detail-price"><strong>{formatPrice(product.price)}</strong><span>/ {product.unit}</span></div><p>{product.description}</p><div className="product-capabilities">{product.preOrderAvailable && <Link to={`/pre-orders?product=${id}`}><CalendarDays size={18} /><span>Pre-order for your preferred date</span></Link>}{product.bulkAvailable && <Link to={`/bulk-orders?product=${id}#bulk-request`}><PackageCheckIcon /><span>Add to a bulk order request</span></Link>}</div><div className="detail-buy-row"><QuantitySelector value={quantity} onChange={setQuantity} max={Math.max(1, product.stock || 1)} /><span>{product.stock} {product.unit} available</span></div><button className="button button-primary button-full" onClick={() => add(false)} disabled={product.stock < 1}>Add to Cart<ShoppingBag size={17} /></button><button className="button button-outline button-full" onClick={() => add(true)} disabled={product.stock < 1}>Buy Now</button></div></div>{related.length > 0 && <section className="page-section detail-related"><h2>You may also like</h2><div className="product-grid">{related.map((item) => <ProductCard key={item._id} product={item} />)}</div></section>}</div>
+  const images = productImages(product)
+  const hasGallery = images.length > 1
+  function showPrev() { setActiveImage((current) => (current - 1 + images.length) % images.length) }
+  function showNext() { setActiveImage((current) => (current + 1) % images.length) }
+  function onTouchStart(event) { touchStartX.current = event.touches[0].clientX }
+  function onTouchEnd(event) {
+    if (touchStartX.current === null) return
+    const delta = event.changedTouches[0].clientX - touchStartX.current
+    if (Math.abs(delta) > 40) { if (delta < 0) showNext(); else showPrev() }
+    touchStartX.current = null
+  }
+  return <div className="page-container product-detail-page"><div className="breadcrumbs"><Link to="/shop">Shop</Link><span>›</span><span>{product.category}</span></div><div className="product-detail"><div className="product-gallery"><div className="product-detail-image" onTouchStart={hasGallery ? onTouchStart : undefined} onTouchEnd={hasGallery ? onTouchEnd : undefined}><img src={images[activeImage]} alt={product.name} loading="eager" />{hasGallery && <button type="button" className="product-gallery-nav prev" onClick={showPrev} aria-label="Previous image"><ChevronLeft size={20} /></button>}{hasGallery && <button type="button" className="product-gallery-nav next" onClick={showNext} aria-label="Next image"><ChevronRight size={20} /></button>}<button type="button" className={`wishlist-button detail-heart${saved ? ' saved' : ''}`} onClick={toggleSaved} aria-label="Toggle wishlist"><Heart size={19} fill={saved ? 'currentColor' : 'none'} /></button><ProductBadges product={product} /></div>{hasGallery && <div className="product-gallery-thumbs" role="tablist" aria-label="Product images">{images.map((src, index) => <button key={src} type="button" role="tab" aria-selected={index === activeImage} className={`product-gallery-thumb${index === activeImage ? ' active' : ''}`} onClick={() => setActiveImage(index)}><img src={src} alt={`${product.name} ${index + 1}`} /></button>)}</div>}</div><div className="product-detail-copy"><span className="eyebrow">{product.category}</span><h1>{product.name}</h1><div className="detail-rating"><Star size={15} fill="currentColor" />{Number(product.rating || 0).toFixed(1)} ({product.reviews || 0} reviews)</div><div className="detail-price"><strong>{formatPrice(product.price)}</strong><span>/ {product.unit}</span></div><p>{product.description}</p><div className="product-capabilities">{product.preOrderAvailable && <Link to={`/pre-orders?product=${id}`}><CalendarDays size={18} /><span>Pre-order for your preferred date</span></Link>}{product.bulkAvailable && <Link to={`/bulk-orders?product=${id}#bulk-request`}><PackageCheckIcon /><span>Add to a bulk order request</span></Link>}</div><div className="detail-buy-row"><QuantitySelector value={quantity} onChange={setQuantity} max={Math.max(1, product.stock || 1)} /><span>{product.stock} {product.unit} available</span></div><button className="button button-primary button-full" onClick={() => add(false)} disabled={product.stock < 1}>Add to Cart<ShoppingBag size={17} /></button><button className="button button-outline button-full" onClick={() => add(true)} disabled={product.stock < 1}>Buy Now</button></div></div>{related.length > 0 && <section className="page-section detail-related"><h2>You may also like</h2><div className="product-grid">{related.map((item) => <ProductCard key={item._id} product={item} />)}</div></section>}</div>
 }
 
 function PackageCheckIcon() { return <ShoppingBag size={18} /> }
