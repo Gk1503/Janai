@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SMS Gateway</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --text:#16191d; --muted:#667085; --line:#e4e7ec; --accent:#2563eb; --ok:#16a34a; --bad:#dc2626; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --card:#161b22; --text:#e6e8eb; --muted:#8b95a3; --line:#262d36; --accent:#4f8cff; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.5 system-ui,sans-serif; }
+  main { max-width:880px; margin:0 auto; padding:24px 16px 64px; }
+  header { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
+  h1 { font-size:20px; margin:0; } h2 { font-size:16px; margin:0 0 12px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:16px; }
+  input, textarea { width:100%; padding:9px 10px; border:1px solid var(--line); border-radius:7px; background:var(--bg); color:var(--text); font:inherit; margin-bottom:8px; }
+  button { background:var(--accent); color:#fff; border:0; border-radius:7px; padding:8px 14px; font:inherit; cursor:pointer; }
+  button.ghost { background:transparent; color:var(--muted); border:1px solid var(--line); }
+  button.danger { background:transparent; color:var(--bad); padding:2px 8px; }
+  table { width:100%; border-collapse:collapse; } th,td { text-align:left; padding:7px 6px; border-bottom:1px solid var(--line); font-size:14px; vertical-align:top; }
+  th { color:var(--muted); font-weight:500; }
+  code, .mono { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:13px; }
+  .muted { color:var(--muted); } .err { color:var(--bad); min-height:1.4em; }
+  .pill { padding:1px 8px; border-radius:99px; font-size:12px; border:1px solid var(--line); }
+  .delivered,.sent,.received,.online { color:var(--ok); } .failed { color:var(--bad); }
+  .key { background:var(--bg); border:1px dashed var(--accent); padding:10px; border-radius:7px; word-break:break-all; margin-top:8px; }
+  .row { display:flex; gap:8px; } .row > * { flex:1; }
+  .scroll { overflow-x:auto; }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<main>
+  <header><h1>SMS Gateway</h1><button class="ghost" id="logout" hidden>Log out</button></header>
+
+  <section id="auth" class="card" style="max-width:380px;margin:40px auto">
+    <h2>Sign in</h2>
+    <input id="email" type="email" placeholder="Email" autocomplete="username">
+    <input id="password" type="password" placeholder="Password (min 8 chars)" autocomplete="current-password">
+    <div class="row"><button id="login">Log in</button><button id="register" class="ghost">Create account</button></div>
+    <p class="err" id="authErr"></p>
+  </section>
+
+  <div id="app" hidden>
+    <div class="card">
+      <h2>1. Connect your phone</h2>
+      <p class="muted">Install the Android app, then enter this server URL and an API key (create one below). The phone will appear under Devices.</p>
+      <p>Server URL: <code id="serverUrl"></code></p>
+      <table><thead><tr><th>Device</th><th>Status</th><th>Last seen</th><th></th></tr></thead><tbody id="devices"></tbody></table>
+    </div>
+
+    <div class="card">
+      <h2>2. API keys</h2>
+      <div class="row"><input id="keyName" placeholder="Key name (e.g. my-website)"><button id="newKey" style="flex:0 0 auto">Generate key</button></div>
+      <div id="newKeyBox" class="key" hidden></div>
+      <table style="margin-top:8px"><thead><tr><th>Name</th><th>Key</th><th>Last used</th><th></th></tr></thead><tbody id="keys"></tbody></table>
+    </div>
+
+    <div class="card">
+      <h2>3. Send a test SMS</h2>
+      <div class="row"><input id="to" placeholder="+919876543210"><input id="body" placeholder="Message"></div>
+      <button id="send">Send</button> <span class="err" id="sendErr"></span>
+    </div>
+
+    <div class="card">
+      <h2>Webhook (incoming SMS &amp; delivery status)</h2>
+      <input id="hookUrl" placeholder="https://your-app.com/sms-webhook">
+      <button id="saveHook">Save</button>
+      <p class="muted">Signing secret: <code id="hookSecret"></code> &mdash; each POST has an <code>X-SMSGateway-Signature: sha256=…</code> HMAC of the body.</p>
+    </div>
+
+    <div class="card">
+      <h2>Messages</h2>
+      <div class="scroll"><table><thead><tr><th>Time</th><th></th><th>Number</th><th>Message</th><th>Status</th></tr></thead><tbody id="messages"></tbody></table></div>
+    </div>
+
+    <div class="card">
+      <h2>API quick reference</h2>
+<pre class="mono" style="white-space:pre-wrap;margin:0">curl -X POST <span class="origin"></span>/v1/messages \
+  -H "x-api-key: YOUR_KEY" -H "content-type: application/json" \
+  -d '{"to":"+919876543210","body":"Big sale today!"}'
+
+# OTP: send, then verify what the user typed
+POST /v1/otp/send    {"to":"+919876543210"}      -> {"otp_id": "..."}
+POST /v1/otp/verify  {"otp_id":"...","code":"123456"} -> {"valid": true}</pre>
+    </div>
+  </div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let token = localStorage.getItem('token');
+
+async function api(method, url, body) {
+  const res = await fetch(url, { method, headers: { 'content-type': 'application/json', ...(token && { authorization: 'Bearer ' + token }) }, body: body && JSON.stringify(body) });
+  const json = await res.json().catch(() => ({}));
+  if (res.status === 401 && token && url.startsWith('/api/') && !url.startsWith('/api/auth')) { logout(); }
+  if (!res.ok) throw new Error(json.error || res.statusText);
+  return json;
+}
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+const ago = (t) => !t ? 'never' : new Date(t).toLocaleString();
+
+async function auth(kind) {
+  $('authErr').textContent = '';
+  try {
+    const r = await api('POST', '/api/auth/' + kind, { email: $('email').value, password: $('password').value });
+    token = r.token; localStorage.setItem('token', token); show();
+  } catch (e) { $('authErr').textContent = e.message; }
+}
+function logout() { token = null; localStorage.removeItem('token'); show(); }
+
+async function refresh() {
+  const [devices, keys, msgs, me] = await Promise.all([api('GET','/api/devices'), api('GET','/api/keys'), api('GET','/api/messages?limit=30'), api('GET','/api/me')]);
+  $('devices').innerHTML = devices.map(d => `<tr><td>${esc(d.name)}</td><td><span class="pill ${d.online?'online':''}">${d.online?'online':'offline'}</span></td><td>${ago(d.last_seen_at)}</td><td><button class="danger" data-dev="${d.id}">remove</button></td></tr>`).join('') || '<tr><td colspan="4" class="muted">No phones connected yet</td></tr>';
+  $('keys').innerHTML = keys.map(k => `<tr><td>${esc(k.name)}</td><td class="mono">${esc(k.prefix)}…</td><td>${ago(k.last_used_at)}</td><td><button class="danger" data-key="${k.id}">revoke</button></td></tr>`).join('') || '<tr><td colspan="4" class="muted">No keys yet</td></tr>';
+  $('messages').innerHTML = msgs.map(m => `<tr><td>${new Date(m.created_at).toLocaleString()}</td><td>${m.direction==='in'?'⬇ in':'⬆ out'}</td><td class="mono">${esc(m.address)}</td><td>${esc(m.body)}</td><td><span class="pill ${m.status}">${m.status}</span>${m.error?' <span class="muted">'+esc(m.error)+'</span>':''}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">No messages yet</td></tr>';
+  if (document.activeElement !== $('hookUrl')) $('hookUrl').value = me.webhook_url || '';
+  $('hookSecret').textContent = me.webhook_secret;
+}
+
+async function show() {
+  const authed = !!token;
+  $('auth').hidden = authed; $('app').hidden = !authed; $('logout').hidden = !authed;
+  $('serverUrl').textContent = location.origin;
+  document.querySelectorAll('.origin').forEach(e => e.textContent = location.origin);
+  if (authed) { try { await refresh(); } catch {} }
+}
+
+$('login').onclick = () => auth('login');
+$('register').onclick = () => auth('register');
+$('logout').onclick = logout;
+$('newKey').onclick = async () => {
+  const r = await api('POST', '/api/keys', { name: $('keyName').value || 'default' });
+  $('newKeyBox').hidden = false;
+  $('newKeyBox').innerHTML = 'Copy this key now, it will not be shown again:<br><b class="mono">' + esc(r.key) + '</b>';
+  $('keyName').value = ''; refresh();
+};
+$('send').onclick = async () => {
+  $('sendErr').textContent = '';
+  try { await api('POST', '/api/messages', { to: $('to').value, body: $('body').value }); $('body').value = ''; refresh(); }
+  catch (e) { $('sendErr').textContent = e.message; }
+};
+$('saveHook').onclick = async () => { await api('PUT', '/api/webhook', { url: $('hookUrl').value }); refresh(); };
+document.addEventListener('click', async (e) => {
+  const { key, dev } = e.target.dataset;
+  if (key && confirm('Revoke this key? Apps using it will stop working.')) { await api('DELETE', '/api/keys/' + key); refresh(); }
+  if (dev && confirm('Remove this device?')) { await api('DELETE', '/api/devices/' + dev); refresh(); }
+});
+setInterval(() => { if (token) refresh().catch(() => {}); }, 5000);
+show();
+</script>
+</body>
+</html>

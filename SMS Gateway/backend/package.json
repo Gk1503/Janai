@@ -1,0 +1,16 @@
+{
+  "name": "sms-gateway-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "node test/smoke.test.js"
+  },
+  "engines": { "node": ">=22.5" },
+  "dependencies": {
+    "express": "^4.21.0",
+    "jsonwebtoken": "^9.0.2"
+  }
+}
