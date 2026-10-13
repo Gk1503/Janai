@@ -38,7 +38,6 @@ export const adminNavigation = [
     items: [
       { label: 'Products', path: '/admin/products', icon: Package },
       { label: 'Categories', path: '/admin/categories', icon: Tags },
-      { label: 'Pricing', path: '/admin/pricing', icon: IndianRupee },
     ],
   },
   {

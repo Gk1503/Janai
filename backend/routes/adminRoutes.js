@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { listUsers, updateUserRole } from '../controllers/adminController.js';
+import { getCustomerDetail, getCustomerStats, listUsers, updateUserRole } from '../controllers/adminController.js';
 import { listBulkOrders, updateBulkOrderStatus } from '../controllers/bulkOrderController.js';
 import { listOrders, updateOrderStatus } from '../controllers/orderController.js';
 import { requireAdmin, requireAuth } from '../middleware/auth.js';
@@ -7,6 +7,8 @@ import { requireAdmin, requireAuth } from '../middleware/auth.js';
 const router = Router();
 router.use(requireAuth, requireAdmin);
 router.get('/users', listUsers);
+router.get('/customers/stats', getCustomerStats);
+router.get('/customers/:id', getCustomerDetail);
 router.patch('/users/:id/role', updateUserRole);
 router.get('/orders', listOrders);
 router.get('/preorders', (req, res, next) => {

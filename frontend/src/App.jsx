@@ -7,6 +7,8 @@ import ScrollToTop from './components/ScrollToTop'
 import { AuthProvider, CartProvider, ToastProvider } from './context/AppContexts'
 import AdminPage from './pages/AdminPage'
 import AdminCategoriesPage from './pages/AdminCategoriesPage'
+import AdminCustomerDetailPage from './pages/AdminCustomerDetailPage'
+import AdminCustomersPage from './pages/AdminCustomersPage'
 import AdminProductsPage from './pages/AdminProductsPage'
 import { AdminBulkOrdersPage, AdminOrdersPage, AdminPreOrdersPage } from './pages/AdminOrderPages'
 import { AboutPage, AdminLoginPage, ContactPage, ForgotPasswordPage, LoginPage, RegisterPage } from './pages/AccountPages'
@@ -53,6 +55,8 @@ export default function App() {
         <Route path="admin/bulk-orders" element={<AdminBulkOrdersPage key="bulk-all" view="all" />} />
         <Route path="admin/bulk-orders/requests" element={<AdminBulkOrdersPage key="bulk-requests" view="requests" />} />
         <Route path="admin/categories" element={<AdminCategoriesPage />} />
+        <Route path="admin/customers" element={<AdminCustomersPage />} />
+        <Route path="admin/customers/:id" element={<AdminCustomerDetailPage />} />
         <Route path="admin/*" element={<AdminComingSoon />} />
       </Route>
     </Route>

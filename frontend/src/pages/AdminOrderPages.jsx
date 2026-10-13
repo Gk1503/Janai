@@ -129,19 +129,20 @@ function OrderCell({ column, order, onView, onAdvance, busyId }) {
     case 'products': return <ProductLines lines={items} />
     case 'total': return <strong>{formatPrice(order.totalAmount)}</strong>
     case 'payment': return <span className="adm-cell-stack"><span>{PAYMENT_METHODS[order.paymentMethod] || order.paymentMethod}</span><PaymentStatusBadge status={order.paymentStatus} /></span>
+    case 'paymentMethod': return PAYMENT_METHODS[order.paymentMethod] || order.paymentMethod
     case 'paymentStatus': return <PaymentStatusBadge status={order.paymentStatus} />
     case 'timeSlot': return order.preferredTimeSlot || 'Any time'
     case 'cancelInfo': return <span className="adm-cell-stack"><span>Last updated {formatDateTime(order.updatedAt)}</span><small>{order.orderType === 'preorder' ? 'Pre-order' : 'Order'} · payment {order.paymentStatus || 'pending'}</small></span>
     case 'status': return <OrderStatusBadge status={order.orderStatus} />
     case 'actions': {
       const next = NEXT_STEP[order.orderStatus]
-      return <span className="adm-row-actions"><button type="button" className="table-action" onClick={() => onView(order)}><Eye size={14} />View</button>{next && <button type="button" className="table-action is-primary" disabled={busyId === order._id} onClick={() => onAdvance(order, next.value)}>{next.label}</button>}</span>
+      return <span className="adm-row-actions"><button type="button" className="table-action" onClick={() => onView(order)}><Eye size={14} />View</button>{onAdvance && next && <button type="button" className="table-action is-primary" disabled={busyId === order._id} onClick={() => onAdvance(order, next.value)}>{next.label}</button>}</span>
     }
     default: return null
   }
 }
 
-const COLUMN_LABELS = { id: 'Order ID', customer: 'Customer', date: 'Order date', deliveryDate: 'Delivery date', items: 'Items', products: 'Products & quantity', total: 'Total', payment: 'Payment', paymentStatus: 'Payment status', timeSlot: 'Preferred time', cancelInfo: 'Cancellation', status: 'Status', actions: 'Actions' }
+const COLUMN_LABELS = { id: 'Order ID', customer: 'Customer', date: 'Order date', deliveryDate: 'Delivery date', items: 'Items', products: 'Products & quantity', total: 'Total', payment: 'Payment', paymentMethod: 'Payment method', paymentStatus: 'Payment status', timeSlot: 'Preferred time', cancelInfo: 'Cancellation', status: 'Status', actions: 'Actions' }
 
 // Reusable order table; on phones each row becomes a labelled card (see .adm-responsive-table).
 export function OrderTable({ orders, columns, onView, onAdvance, busyId }) {
@@ -158,7 +159,7 @@ function DetailRow({ label, children }) {
   return <div className="adm-detail-row"><dt>{label}</dt><dd>{children}</dd></div>
 }
 
-export function OrderDetailsModal({ order, onClose, onStatusChange, busy }) {
+export function OrderDetailsModal({ order, onClose, onStatusChange, busy, readOnly = false }) {
   const [status, setStatus] = useState(order.orderStatus)
   const [confirmCancel, setConfirmCancel] = useState(false)
   useEffect(() => { setStatus(order.orderStatus) }, [order.orderStatus])
@@ -237,7 +238,7 @@ export function OrderDetailsModal({ order, onClose, onStatusChange, busy }) {
       </section>
     </div>
 
-    <section className="adm-detail-section adm-status-editor">
+    {!readOnly && <section className="adm-detail-section adm-status-editor">
       <h3 className="adm-modal-section-title">Update status</h3>
       <div className="adm-status-row">
         <label className="sort-select"><select value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Order status">{ORDER_STATUSES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
@@ -247,7 +248,7 @@ export function OrderDetailsModal({ order, onClose, onStatusChange, busy }) {
         <p>Cancel order <strong>{shortId(order._id)}</strong>? The customer will see it as cancelled.</p>
         <div className="adm-modal-foot"><button type="button" className="button button-outline" onClick={() => { setConfirmCancel(false); setStatus(order.orderStatus) }}>Keep order</button><button type="button" className="button button-danger" disabled={busy} onClick={() => { setConfirmCancel(false); onStatusChange(order, 'cancelled') }}>Cancel order</button></div>
       </div>}
-    </section>
+    </section>}
   </Modal>
 }
 
