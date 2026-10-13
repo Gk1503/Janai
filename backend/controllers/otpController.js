@@ -1,8 +1,9 @@
+import LoginOtp from '../models/LoginOtp.js';
 import User from '../models/User.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import { sendAuth } from '../utils/token.js';
 
-const FAST2SMS_BASE = 'https://www.fast2sms.com/dev/otp';
+const OTP_TTL_MS = 5 * 60_000;
 const COOLDOWN_MS = 30_000;
 const WINDOW_MS = 10 * 60_000;
 const MAX_SENDS = 5;
@@ -29,35 +30,39 @@ function requestState(mobile) {
   return { state, now };
 }
 
-async function callFast2Sms(action, body) {
-  const apiKey = process.env.FAST2SMS_API_KEY;
-  if (!apiKey || !process.env.FAST2SMS_OTP_ID) {
+// Calls the self-hosted SMS gateway, which generates, sends and verifies the OTP.
+async function callGateway(path, body) {
+  const { SMS_GATEWAY_URL: baseUrl, SMS_GATEWAY_KEY: apiKey } = process.env;
+  if (!baseUrl || !apiKey) {
     const error = new Error('SMS login is not configured yet. Please use email and password or contact support.');
     error.statusCode = 503;
     throw error;
   }
   let response;
   try {
-    response = await fetch(`${FAST2SMS_BASE}/${action}`, {
+    response = await fetch(`${baseUrl.replace(/\/+$/, '')}${path}`, {
       method: 'POST',
-      headers: { Authorization: apiKey, 'Content-Type': 'application/json', Accept: 'application/json' },
+      headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(12_000),
     });
-  } catch {
+  } catch (cause) {
+    console.error(`SMS gateway unreachable at ${baseUrl}: ${cause.message}`);
     const error = new Error('SMS service is temporarily unavailable. Please try again.');
     error.statusCode = 502;
     throw error;
   }
-  let result;
-  try { result = await response.json(); } catch { result = {}; }
-  if (!response.ok || result.success === false || result.return === false || result.status === 'failed') {
-    const error = new Error('SMS service could not process this request. Please try again.');
-    const rejectedOtp = action === 'verify' && response.status < 500;
-    error.statusCode = response.status === 429 ? 429 : rejectedOtp ? 401 : 502;
-    throw error;
-  }
-  return result;
+  const data = await response.json().catch(() => ({}));
+  return { status: response.status, data };
+}
+
+function gatewayFailure(status, data) {
+  console.error(`SMS gateway returned ${status}: ${JSON.stringify(data).slice(0, 300)}`);
+  const error = new Error(status === 409
+    ? 'SMS service is offline right now. Please try again shortly.'
+    : 'SMS service could not process this request. Please try again.');
+  error.statusCode = status === 429 ? 429 : status === 409 ? 503 : 502;
+  return error;
 }
 
 function findRegisteredUser(mobile) {
@@ -78,6 +83,19 @@ async function registeredMobile(req, res) {
   return { mobile, user };
 }
 
+async function issueOtp(mobile) {
+  const { status, data } = await callGateway('/v1/otp/send', {
+    to: `+91${mobile}`,
+    message: 'Your Janai login OTP is {code}. It is valid for 5 minutes. Do not share it with anyone.',
+  });
+  if (status !== 202 || !data.otp_id) throw gatewayFailure(status, data);
+  await LoginOtp.findOneAndUpdate(
+    { mobile },
+    { otpId: data.otp_id, expiresAt: new Date(Date.now() + OTP_TTL_MS) },
+    { upsert: true },
+  );
+}
+
 export const sendLoginOtp = asyncHandler(async (req, res) => {
   const result = await registeredMobile(req, res);
   if (!result) return;
@@ -87,7 +105,7 @@ export const sendLoginOtp = asyncHandler(async (req, res) => {
   if (rate.state.sendCount >= MAX_SENDS) return res.status(429).json({ message: 'You have reached the OTP request limit. Please try again in 10 minutes.' });
   rate.state.lastRequest = rate.now;
   try {
-    await callFast2Sms('send', { otp_id: process.env.FAST2SMS_OTP_ID, mobile });
+    await issueOtp(mobile);
     rate.state.sendCount += 1;
     rate.state.sent = true;
     return res.json({ message: 'OTP sent successfully.', mobile });
@@ -107,7 +125,7 @@ export const resendLoginOtp = asyncHandler(async (req, res) => {
   if (rate.state.resendCount >= MAX_RESENDS) return res.status(429).json({ message: 'You have reached the OTP resend limit. Please try again in 10 minutes.' });
   rate.state.lastRequest = rate.now;
   try {
-    await callFast2Sms('resend', { mobile });
+    await issueOtp(mobile);
     rate.state.resendCount += 1;
   } catch (error) {
     rate.state.lastRequest = 0;
@@ -123,15 +141,13 @@ export const verifyLoginOtp = asyncHandler(async (req, res) => {
   if (!/^\d{6}$/.test(otp)) return res.status(400).json({ message: 'Enter the 6-digit OTP.' });
   const user = await findRegisteredUser(mobile);
   if (!user) return res.status(404).json({ message: 'No account found with this mobile number. Please register first.' });
-  let result;
-  try {
-    result = await callFast2Sms('verify', { mobile, otp });
-  } catch (error) {
-    if (error.statusCode === 502 || error.statusCode === 503) throw error;
-    return res.status(401).json({ message: 'Invalid or expired OTP. Please try again.' });
-  }
-  const verified = result.success === true || result.return === true || result.status === 'success';
-  if (!verified) return res.status(401).json({ message: 'Invalid or expired OTP. Please try again.' });
+  const record = await LoginOtp.findOne({ mobile });
+  if (!record || record.expiresAt < new Date()) return res.status(401).json({ message: 'Invalid or expired OTP. Please try again.' });
+  const { status, data } = await callGateway('/v1/otp/verify', { otp_id: record.otpId, code: otp });
+  if (status === 400) return res.status(401).json({ message: 'Invalid or expired OTP. Please try again.' });
+  if (status !== 200) throw gatewayFailure(status, data);
+  if (data.valid !== true) return res.status(401).json({ message: 'Invalid or expired OTP. Please try again.' });
+  await record.deleteOne();
   requests.delete(mobile);
   return sendAuth(res, user);
 });
