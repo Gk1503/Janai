@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { IndianRupee, Image as ImageIcon, Plus, Save, Store, Trash2, Upload } from 'lucide-react'
+import { ChevronLeft, ChevronRight, IndianRupee, Image as ImageIcon, Plus, RefreshCw, Save, Star, Store, Trash2, Upload } from 'lucide-react'
 import api, { getApiError } from '../services/api'
 import { useToast } from '../context/AppContexts'
 import { Modal } from './UI'
+import { VendorPriceHistoryModal, VendorPurchaseHistoryModal } from './VendorHistoryModals'
+
+const MAX_IMAGES = 8
 
 const UNIT_OPTIONS = [
   { value: 'kg', label: 'Kilogram (kg)' },
@@ -33,6 +36,7 @@ function toFormState(product) {
 function emptyVendor() {
   return {
     id: Math.random().toString(36).slice(2),
+    _id: null,
     name: '',
     purchasePrice: '',
     moq: '',
@@ -44,9 +48,30 @@ function emptyVendor() {
   }
 }
 
+function toVendorEntries(product) {
+  const vendors = product?.vendors || []
+  if (!vendors.length) return [emptyVendor()]
+  return vendors.map((vendor) => ({
+    id: vendor._id || Math.random().toString(36).slice(2),
+    _id: vendor._id || null,
+    name: vendor.name || '',
+    purchasePrice: vendor.purchasePrice ?? '',
+    moq: vendor.moq || '',
+    leadTime: vendor.leadTime || '',
+    preferred: Boolean(vendor.preferred),
+    lastPurchasePrice: vendor.lastPurchasePrice ?? '',
+    lastPurchaseDate: vendor.lastPurchaseDate ? String(vendor.lastPurchaseDate).slice(0, 10) : '',
+    notes: vendor.notes || '',
+  }))
+}
+
 export function capitalizeFirst(value) {
   const trimmed = value.trim()
   return trimmed ? trimmed[0].toUpperCase() + trimmed.slice(1) : trimmed
+}
+
+function toImageEntries(product) {
+  return (product?.images || []).map((src) => ({ id: Math.random().toString(36).slice(2), src }))
 }
 
 export function readImageAsDataUrl(file, maxDimension = 900, quality = 0.82) {
@@ -74,13 +99,16 @@ export default function ProductFormModal({ product, onClose, onSaved }) {
   const toast = useToast()
   const [form, setForm] = useState(() => toFormState(product))
   const [categories, setCategories] = useState([])
-  const [imagePreview, setImagePreview] = useState(product?.images?.[0] || '')
+  const [images, setImages] = useState(() => toImageEntries(product))
   const [imageError, setImageError] = useState('')
+  const replaceInputRef = useRef(null)
+  const replaceTargetId = useRef(null)
   const [purchasePrice, setPurchasePrice] = useState('')
   const [fixedAmount, setFixedAmount] = useState('')
   const [profitPercent, setProfitPercent] = useState('')
   const [gstRate, setGstRate] = useState(0)
-  const [vendors, setVendors] = useState(() => [emptyVendor()])
+  const [vendors, setVendors] = useState(() => toVendorEntries(product))
+  const [historyTarget, setHistoryTarget] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const fileInputRef = useRef(null)
@@ -97,15 +125,71 @@ export default function ProductFormModal({ product, onClose, onSaved }) {
     setForm((current) => ({ ...current, [field]: value }))
   }
 
-  async function onImageSelected(event) {
-    const file = event.target.files?.[0]
+  async function addImages(event) {
+    const files = Array.from(event.target.files || [])
     event.target.value = ''
-    if (!file) return
+    if (!files.length) return
+    const room = MAX_IMAGES - images.length
+    if (room <= 0) { setImageError(`You can add up to ${MAX_IMAGES} images.`); return }
+    const toProcess = files.slice(0, room)
+    const added = []
+    const problems = []
+    for (const file of toProcess) {
+      if (!file.type.startsWith('image/')) { problems.push(`"${file.name}" is not an image file.`); continue }
+      if (file.size > MAX_IMAGE_BYTES) { problems.push(`"${file.name}" is larger than 5MB.`); continue }
+      try {
+        const dataUrl = await readImageAsDataUrl(file)
+        const isDuplicate = images.some((img) => img.src === dataUrl) || added.some((img) => img.src === dataUrl)
+        if (!isDuplicate) added.push({ id: Math.random().toString(36).slice(2), src: dataUrl })
+      } catch {
+        problems.push(`"${file.name}" could not be read.`)
+      }
+    }
+    if (added.length) setImages((current) => [...current, ...added])
+    const messages = []
+    if (files.length > toProcess.length) messages.push(`Only ${toProcess.length} of ${files.length} selected images were added — the limit is ${MAX_IMAGES}.`)
+    if (problems.length) messages.push(problems.join(' '))
+    setImageError(messages.join(' '))
+  }
+
+  function removeImage(id) {
+    setImages((current) => current.filter((img) => img.id !== id))
+  }
+
+  function moveImage(id, direction) {
+    setImages((current) => {
+      const index = current.findIndex((img) => img.id === id)
+      const target = index + direction
+      if (index < 0 || target < 0 || target >= current.length) return current
+      const next = [...current]
+      ;[next[index], next[target]] = [next[target], next[index]]
+      return next
+    })
+  }
+
+  function makeMainImage(id) {
+    setImages((current) => {
+      const found = current.find((img) => img.id === id)
+      return found ? [found, ...current.filter((img) => img.id !== id)] : current
+    })
+  }
+
+  function startReplace(id) {
+    replaceTargetId.current = id
+    replaceInputRef.current?.click()
+  }
+
+  async function onReplaceSelected(event) {
+    const file = event.target.files?.[0]
+    const targetId = replaceTargetId.current
+    event.target.value = ''
+    replaceTargetId.current = null
+    if (!file || !targetId) return
     if (!file.type.startsWith('image/')) { setImageError('Please choose an image file (JPG, PNG, WEBP…).'); return }
     if (file.size > MAX_IMAGE_BYTES) { setImageError('Image must be smaller than 5MB.'); return }
     try {
       const dataUrl = await readImageAsDataUrl(file)
-      setImagePreview(dataUrl)
+      setImages((current) => current.map((img) => (img.id === targetId ? { ...img, src: dataUrl } : img)))
       setImageError('')
     } catch {
       setImageError('Could not read that image. Please try another file.')
@@ -143,7 +227,25 @@ export default function ProductFormModal({ product, onClose, onSaved }) {
     event.preventDefault()
     setBusy(true)
     setError('')
-    const payload = { ...form, price: Number(form.price), stock: Number(form.stock), images: imagePreview ? [imagePreview] : [] }
+    const payload = {
+      ...form,
+      price: Number(form.price),
+      stock: Number(form.stock),
+      images: images.map((img) => img.src),
+      vendors: vendors
+        .filter((vendor) => vendor.name.trim() || Number(vendor.purchasePrice) > 0)
+        .map((vendor) => ({
+          ...(vendor._id ? { _id: vendor._id } : {}),
+          name: vendor.name.trim(),
+          purchasePrice: Number(vendor.purchasePrice) || 0,
+          moq: vendor.moq,
+          leadTime: vendor.leadTime,
+          preferred: vendor.preferred,
+          lastPurchasePrice: vendor.lastPurchasePrice === '' ? null : Number(vendor.lastPurchasePrice),
+          lastPurchaseDate: vendor.lastPurchaseDate || null,
+          notes: vendor.notes,
+        })),
+    }
     try {
       if (isEdit) await api.put(`/products/${product._id}`, payload)
       else await api.post('/products', payload)
@@ -157,7 +259,8 @@ export default function ProductFormModal({ product, onClose, onSaved }) {
     }
   }
 
-  return <Modal title={isEdit ? 'Edit Product' : 'Add New Product'} onClose={onClose} wide>
+  return <>
+    <Modal title={isEdit ? 'Edit Product' : 'Add New Product'} onClose={onClose} wide>
     <form className="adm-product-form" onSubmit={submit}>
       <div className="adm-form-section">
         <span className="adm-modal-section-title">Product information</span>
@@ -173,18 +276,38 @@ export default function ProductFormModal({ product, onClose, onSaved }) {
       </div>
 
       <div className="adm-form-section">
-        <span className="adm-modal-section-title">Product image</span>
+        <div className="adm-form-section-head"><ImageIcon size={16} /><h3>Product Images</h3></div>
+        <p className="adm-form-section-description">Add up to {MAX_IMAGES} images. The first image is the main photo used on product cards and listings everywhere else in Janai.</p>
         <div className="adm-soft-section">
-          <div className="adm-image-upload">
-            <div className="adm-image-preview">{imagePreview ? <img src={imagePreview} alt="Product preview" /> : <span><ImageIcon size={26} />No image selected</span>}</div>
-            <div className="adm-image-actions">
-              <button type="button" className="button button-outline" onClick={() => fileInputRef.current?.click()}><Upload size={15} />{imagePreview ? 'Replace Image' : 'Upload Image'}</button>
-              {imagePreview && <button type="button" className="text-link" onClick={() => setImagePreview('')}>Remove image</button>}
-              <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={onImageSelected} />
-              <p className="adm-image-hint">JPG, PNG or WEBP, up to 5MB.</p>
-              {imageError && <div className="form-error">{imageError}</div>}
-            </div>
+          <div className="adm-image-toolbar">
+            <button type="button" className="button button-outline" disabled={images.length >= MAX_IMAGES} onClick={() => fileInputRef.current?.click()}><Upload size={15} />Add Images</button>
+            <span className="adm-image-count">{images.length} / {MAX_IMAGES} images</span>
+            <input ref={fileInputRef} type="file" accept="image/*" multiple hidden onChange={addImages} />
+            <input ref={replaceInputRef} type="file" accept="image/*" hidden onChange={onReplaceSelected} />
           </div>
+
+          {imageError && <div className="form-error">{imageError}</div>}
+
+          {!images.length ? (
+            <div className="adm-image-empty"><ImageIcon size={24} /><span>No images yet. Add at least one so customers can recognise this product.</span></div>
+          ) : (
+            <div className="adm-image-grid">
+              {images.map((img, index) => <div className="adm-image-item" key={img.id}>
+                <div className="adm-image-item-preview">
+                  <img src={img.src} alt={`Product image ${index + 1}`} />
+                  {index === 0 && <span className="adm-image-badge"><Star size={11} fill="currentColor" />Main</span>}
+                </div>
+                <div className="adm-image-item-actions">
+                  <button type="button" className="adm-icon-button" aria-label={`Move image ${index + 1} left`} disabled={index === 0} onClick={() => moveImage(img.id, -1)}><ChevronLeft size={15} /></button>
+                  <button type="button" className="adm-icon-button" aria-label={`Move image ${index + 1} right`} disabled={index === images.length - 1} onClick={() => moveImage(img.id, 1)}><ChevronRight size={15} /></button>
+                  <button type="button" className="adm-icon-button" aria-label={`Replace image ${index + 1}`} onClick={() => startReplace(img.id)}><RefreshCw size={14} /></button>
+                  <button type="button" className="adm-icon-button" aria-label={`Remove image ${index + 1}`} onClick={() => removeImage(img.id)}><Trash2 size={14} /></button>
+                </div>
+                {index !== 0 && <button type="button" className="text-link adm-image-make-main" onClick={() => makeMainImage(img.id)}>Make main image</button>}
+              </div>)}
+            </div>
+          )}
+          <p className="adm-image-hint">JPG, PNG or WEBP, up to 5MB each. Use the arrows to reorder — the first image is the main photo.</p>
         </div>
       </div>
 
@@ -249,7 +372,13 @@ export default function ProductFormModal({ product, onClose, onSaved }) {
             {vendors.map((vendor, index) => <div className="adm-vendor-card" key={vendor.id}>
               <div className="adm-vendor-card-head">
                 <strong>Vendor {index + 1}</strong>
-                <button type="button" className="adm-icon-button" aria-label={`Remove vendor ${index + 1}`} onClick={() => removeVendor(vendor.id)}><Trash2 size={15} /></button>
+                <div className="adm-vendor-card-actions">
+                  {vendor._id && <>
+                    <button type="button" className="button button-outline button-sm" onClick={() => setHistoryTarget({ vendorId: vendor._id, vendorName: vendor.name, mode: 'price' })}>Price History</button>
+                    <button type="button" className="button button-outline button-sm" onClick={() => setHistoryTarget({ vendorId: vendor._id, vendorName: vendor.name, mode: 'purchase' })}>Purchase History</button>
+                  </>}
+                  <button type="button" className="adm-icon-button" aria-label={`Remove vendor ${index + 1}`} onClick={() => removeVendor(vendor.id)}><Trash2 size={15} /></button>
+                </div>
               </div>
 
               <div className="adm-form-grid">
@@ -276,7 +405,7 @@ export default function ProductFormModal({ product, onClose, onSaved }) {
 
           <button type="button" className="text-link" onClick={addVendor}><Plus size={15} /> {vendors.length ? 'Add Another Vendor' : 'Add Vendor'}</button>
 
-          <p className="adm-form-note">Vendor details are not saved yet — there's no Vendor/Supplier module in Janai today. See the implementation notes shared alongside this update for what's needed to make this permanent. Last purchase price/date are manual notes; Janai doesn't track procurement history automatically.</p>
+          <p className="adm-form-note">{isEdit ? 'Vendor details are saved with this product. Use Price History and Purchase History on a saved vendor to track real procurement activity over time.' : 'Vendor details will be saved once you add this product — Price History and Purchase History become available after that.'} "Last purchase price/date" above are optional manual notes, separate from the tracked Purchase History.</p>
         </div>
       </div>
 
@@ -286,5 +415,8 @@ export default function ProductFormModal({ product, onClose, onSaved }) {
         <button type="submit" className="button button-primary" disabled={busy}>{busy ? 'Saving…' : isEdit ? 'Save Changes' : 'Add Product'}<Save size={15} /></button>
       </div>
     </form>
-  </Modal>
+    </Modal>
+    {historyTarget?.mode === 'price' && <VendorPriceHistoryModal productId={product._id} vendorId={historyTarget.vendorId} vendorName={historyTarget.vendorName} onClose={() => setHistoryTarget(null)} />}
+    {historyTarget?.mode === 'purchase' && <VendorPurchaseHistoryModal productId={product._id} vendorId={historyTarget.vendorId} vendorName={historyTarget.vendorName} unit={form.unit} onClose={() => setHistoryTarget(null)} />}
+  </>
 }

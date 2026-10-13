@@ -1,5 +1,28 @@
+import mongoose from 'mongoose';
 import Product from '../models/Product.js';
+import VendorPriceHistory from '../models/VendorPriceHistory.js';
 import asyncHandler from '../utils/asyncHandler.js';
+
+// Whitelists and casts incoming vendor rows. A client-sent `_id` is kept only when it's
+// a real ObjectId (i.e. an already-persisted vendor) so Mongoose preserves that vendor's
+// identity across the save; anything else is treated as a brand-new vendor subdocument.
+function sanitizeVendors(vendors) {
+  if (!Array.isArray(vendors)) return [];
+  return vendors.map((vendor) => {
+    const clean = {
+      name: String(vendor?.name || '').trim(),
+      purchasePrice: Number(vendor?.purchasePrice) || 0,
+      moq: String(vendor?.moq || '').trim(),
+      leadTime: String(vendor?.leadTime || '').trim(),
+      preferred: Boolean(vendor?.preferred),
+      lastPurchasePrice: vendor?.lastPurchasePrice === '' || vendor?.lastPurchasePrice == null ? null : Number(vendor.lastPurchasePrice),
+      lastPurchaseDate: vendor?.lastPurchaseDate ? new Date(vendor.lastPurchaseDate) : null,
+      notes: String(vendor?.notes || '').trim(),
+    };
+    if (vendor?._id && mongoose.isValidObjectId(vendor._id)) clean._id = vendor._id;
+    return clean;
+  });
+}
 
 export const listProducts = asyncHandler(async (req, res) => {
   const { category, q, sort = 'featured', preOrder, bulk, minPrice, maxPrice, rating } = req.query;
@@ -27,13 +50,40 @@ export const getProduct = asyncHandler(async (req, res) => {
 });
 
 export const createProduct = asyncHandler(async (req, res) => {
-  const product = await Product.create(req.body);
+  const payload = { ...req.body };
+  // A brand-new product has no price history to compare against, so vendors are
+  // saved as-is (stripped of any client-sent `_id`, which can't be real yet).
+  if (payload.vendors !== undefined) payload.vendors = sanitizeVendors(payload.vendors).map(({ _id, ...rest }) => rest);
+  const product = await Product.create(payload);
   res.status(201).json({ product });
 });
 
 export const updateProduct = asyncHandler(async (req, res) => {
-  const product = await Product.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+  const existing = await Product.findById(req.params.id);
+  if (!existing) return res.status(404).json({ message: 'Product not found.' });
+
+  const update = { ...req.body };
+  const loggingVendors = update.vendors !== undefined;
+  if (loggingVendors) update.vendors = sanitizeVendors(update.vendors);
+  const previousPriceByVendorId = new Map(existing.vendors.map((vendor) => [String(vendor._id), Number(vendor.purchasePrice)]));
+
+  const product = await Product.findByIdAndUpdate(req.params.id, update, { new: true, runValidators: true });
   if (!product) return res.status(404).json({ message: 'Product not found.' });
+
+  // Only an actual purchase-price change on a vendor that already existed counts as a
+  // price change — unrelated edits (name, notes, a brand-new vendor) never log an entry.
+  if (loggingVendors) {
+    const changes = [];
+    for (const vendor of product.vendors) {
+      const key = String(vendor._id);
+      if (!previousPriceByVendorId.has(key)) continue;
+      const previousPrice = previousPriceByVendorId.get(key);
+      const newPrice = Number(vendor.purchasePrice);
+      if (previousPrice !== newPrice) changes.push({ product: product._id, vendor: vendor._id, vendorName: vendor.name, previousPrice, newPrice, changedBy: req.user?._id });
+    }
+    if (changes.length) await VendorPriceHistory.insertMany(changes);
+  }
+
   res.json({ product });
 });
 

@@ -5,10 +5,20 @@ import { useAuth, useCart, useToast } from '../context/AppContexts'
 
 export const categoryImages = { Fruits: '/fruit.jpg', Vegetables: '/Vegatables.png', Groceries: '/grocery.jpg', 'Combo Packs': '/grocery.jpg', 'Seasonal Specials': '/fruit.jpg' }
 
+function isUsableImage(value) {
+  return typeof value === 'string' && (value.startsWith('/') || value.startsWith('data:image') || value.startsWith('http'))
+}
+
 export function productImage(product) {
   const image = product.images?.[0] || product.image
-  const isUsable = typeof image === 'string' && (image.startsWith('/') || image.startsWith('data:image') || image.startsWith('http'))
-  return isUsable ? image : categoryImages[product.category] || '/fruit.jpg'
+  return isUsableImage(image) ? image : categoryImages[product.category] || '/fruit.jpg'
+}
+
+// Full, ordered gallery for a product — always returns at least one usable src
+// (falling back to the category image) so callers never need their own fallback.
+export function productImages(product) {
+  const usable = (product.images || []).filter(isUsableImage)
+  return usable.length ? usable : [productImage(product)]
 }
 
 // Product photo that falls back to the category image if the stored URL is broken.
