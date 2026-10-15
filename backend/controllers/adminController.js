@@ -1,6 +1,8 @@
 import Order from '../models/Order.js';
 import User from '../models/User.js';
 import asyncHandler from '../utils/asyncHandler.js';
+import { orderTypeCondition, viewableOrderTypes } from '../config/permissions.js';
+import { maskOrder, maskUser, shouldMaskContact } from '../utils/privacy.js';
 
 function escapeRegex(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -21,10 +23,13 @@ async function orderTotalsByUser(userIds) {
 export const listUsers = asyncHandler(async (req, res) => {
   const { q, role } = req.query;
   const filter = {};
-  if (role) filter.role = role;
+  // Only the owner can list owner/staff accounts; staff with customers:view see customers only.
+  if (req.user.role !== 'admin') filter.role = 'customer';
+  else if (role) filter.role = role;
   if (q && String(q).trim()) {
     const regex = new RegExp(escapeRegex(String(q).trim()), 'i');
-    filter.$or = [{ firstName: regex }, { lastName: regex }, { email: regex }, { phone: regex }];
+    // Searching masked fields would let staff confirm hidden values, so name-only for them.
+    filter.$or = shouldMaskContact(req.user) ? [{ firstName: regex }, { lastName: regex }] : [{ firstName: regex }, { lastName: regex }, { email: regex }, { phone: regex }];
   }
   // Default limit (500) and no role filter match the endpoint's original, unparameterized behaviour
   // so existing callers (the Dashboard's Customers tab) keep working exactly as before.
@@ -38,11 +43,11 @@ export const listUsers = asyncHandler(async (req, res) => {
   const totalsById = await orderTotalsByUser(users.map((user) => user._id));
 
   res.json({
-    users: users.map((user) => ({
+    users: users.map((user) => maskUser({
       ...user.toSafeJSON(),
       totalOrders: totalsById.get(String(user._id))?.totalOrders || 0,
       totalSpent: totalsById.get(String(user._id))?.totalSpent || 0,
-    })),
+    }, req.user)),
     total,
     page,
     pages: Math.ceil(total / limit) || 1,
@@ -50,10 +55,11 @@ export const listUsers = asyncHandler(async (req, res) => {
 });
 
 export const updateUserRole = asyncHandler(async (req, res) => {
-  if (!['customer', 'admin'].includes(req.body.role)) return res.status(400).json({ message: 'Choose a valid role.' });
-  if (String(req.params.id) === String(req.user.id)) return res.status(400).json({ message: 'You cannot change your own role.' });
-  const user = await User.findByIdAndUpdate(req.params.id, { role: req.body.role }, { new: true, runValidators: true });
+  // Owner and staff accounts are never created or changed here; staff are managed in Staff & Access.
+  if (req.body.role !== 'customer') return res.status(400).json({ message: 'Owner and staff roles cannot be assigned here.' });
+  const user = await User.findById(req.params.id);
   if (!user) return res.status(404).json({ message: 'User not found.' });
+  if (user.role !== 'customer') return res.status(403).json({ message: 'This account\'s role cannot be changed here.' });
   res.json({ user: user.toSafeJSON() });
 });
 
@@ -82,14 +88,17 @@ export const getCustomerStats = asyncHandler(async (req, res) => {
 
 export const getCustomerDetail = asyncHandler(async (req, res) => {
   const customer = await User.findById(req.params.id);
-  if (!customer) return res.status(404).json({ message: 'Customer not found.' });
+  if (!customer || (req.user.role !== 'admin' && customer.role !== 'customer')) return res.status(404).json({ message: 'Customer not found.' });
+  // Order history is limited to the order types this user may view.
+  const orderFilter = { user: customer._id };
+  if (req.user.role !== 'admin') orderFilter.orderType = orderTypeCondition(viewableOrderTypes(req.user));
   const [orders, totalsById] = await Promise.all([
-    Order.find({ user: customer._id }).populate('user', 'firstName lastName email phone').sort({ createdAt: -1 }),
+    Order.find(orderFilter).populate('user', 'firstName lastName email phone').sort({ createdAt: -1 }),
     orderTotalsByUser([customer._id]),
   ]);
   const totals = totalsById.get(String(customer._id)) || { totalOrders: 0, totalSpent: 0 };
   res.json({
-    customer: { ...customer.toSafeJSON(), totalOrders: totals.totalOrders, totalSpent: totals.totalSpent },
-    orders,
+    customer: maskUser({ ...customer.toSafeJSON(), totalOrders: totals.totalOrders, totalSpent: totals.totalSpent }, req.user),
+    orders: orders.map((order) => maskOrder(order, req.user)),
   });
 });

@@ -1,17 +1,20 @@
 import { Router } from 'express';
 import { createProduct, deleteProduct, getProduct, listProducts, updateProduct } from '../controllers/productController.js';
 import { createPurchase, listPriceHistory, listPurchases, receivePurchase } from '../controllers/vendorController.js';
-import { requireAdmin, requireAuth } from '../middleware/auth.js';
+import { optionalAuth, requireAnyPermission, requireAuth, requirePermission } from '../middleware/auth.js';
 
 const router = Router();
-router.get('/', listProducts);
-router.get('/:id', getProduct);
-router.post('/', requireAuth, requireAdmin, createProduct);
-router.put('/:id', requireAuth, requireAdmin, updateProduct);
-router.delete('/:id', requireAuth, requireAdmin, deleteProduct);
+// optionalAuth: supplier cost data is only included for the owner or staff with products:view.
+router.get('/', optionalAuth, listProducts);
+router.get('/:id', optionalAuth, getProduct);
+router.post('/', requireAuth, requirePermission('products:manage'), createProduct);
+// Staff with only inventory:update may send { stock } alone; the controller enforces that.
+router.put('/:id', requireAuth, requireAnyPermission('products:manage', 'inventory:update'), updateProduct);
+router.delete('/:id', requireAuth, requirePermission('products:manage'), deleteProduct);
 
-router.get('/:productId/vendors/:vendorId/price-history', requireAuth, requireAdmin, listPriceHistory);
-router.get('/:productId/vendors/:vendorId/purchases', requireAuth, requireAdmin, listPurchases);
-router.post('/:productId/vendors/:vendorId/purchases', requireAuth, requireAdmin, createPurchase);
-router.patch('/:productId/vendors/:vendorId/purchases/:purchaseId/receive', requireAuth, requireAdmin, receivePurchase);
+const vendorRead = requireAnyPermission('products:manage', 'inventory:update');
+router.get('/:productId/vendors/:vendorId/price-history', requireAuth, vendorRead, listPriceHistory);
+router.get('/:productId/vendors/:vendorId/purchases', requireAuth, vendorRead, listPurchases);
+router.post('/:productId/vendors/:vendorId/purchases', requireAuth, requirePermission('inventory:update'), createPurchase);
+router.patch('/:productId/vendors/:vendorId/purchases/:purchaseId/receive', requireAuth, requirePermission('inventory:update'), receivePurchase);
 export default router;

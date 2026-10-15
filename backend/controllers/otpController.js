@@ -66,7 +66,8 @@ function gatewayFailure(status, data) {
 }
 
 function findRegisteredUser(mobile) {
-  return User.findOne({ phone: { $in: [mobile, `+91${mobile}`, `91${mobile}`, `+91 ${mobile}`] } });
+  // Customers only: owner and staff accounts must not be able to sign in with an SMS code.
+  return User.findOne({ role: 'customer', phone: { $in: [mobile, `+91${mobile}`, `91${mobile}`, `+91 ${mobile}`] } });
 }
 
 async function registeredMobile(req, res) {

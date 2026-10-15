@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Eye, Search, ShoppingBag, UserCheck, UserPlus, Users } from 'lucide-react'
 import api, { getApiError } from '../services/api'
+import { useAuth } from '../context/AppContexts'
 import { EmptyState, Loader, formatPrice } from '../components/UI'
 
 const PAGE_SIZE = 10
@@ -40,6 +41,7 @@ const METRICS = [
 
 export default function AdminCustomersPage() {
   const navigate = useNavigate()
+  const { can } = useAuth()
   const [customers, setCustomers] = useState([])
   const [total, setTotal] = useState(0)
   const [pages, setPages] = useState(1)
@@ -87,6 +89,7 @@ export default function AdminCustomersPage() {
     <div className="adm-page-head">
       <div><h1>Customers</h1><p>Manage your registered customers and their activity.</p></div>
     </div>
+    {!can('customers:view_contact') && <p className="adm-note">Customer email addresses and phone numbers are partly hidden for your account.</p>}
 
     <section className="adm-metric-grid">
       {METRICS.map(({ key, label, icon: Icon }) => <article className="adm-metric-card" key={key}>

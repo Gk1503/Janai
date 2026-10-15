@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import api, { getApiError } from '../services/api'
-import { useToast } from '../context/AppContexts'
+import { useAuth, useToast } from '../context/AppContexts'
 import { EmptyState, Loader, Modal, productImage } from '../components/UI'
 import ProductFormModal from '../components/ProductFormModal'
+import StockUpdateModal from '../components/StockUpdateModal'
 
 const PAGE_SIZE = 10
 const STATUS_FILTERS = [
@@ -21,6 +22,11 @@ function productStatus(product) {
 
 export default function AdminProductsPage() {
   const toast = useToast()
+  const { can } = useAuth()
+  // Usability only; the backend decides. products:manage = full control, inventory:update = stock quantity only.
+  const canManage = can('products:manage')
+  const canUpdateStock = can('inventory:update')
+  const [stockTarget, setStockTarget] = useState(null)
   const [products, setProducts] = useState([])
   const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
@@ -91,7 +97,7 @@ export default function AdminProductsPage() {
   return <div className="adm-products-page">
     <div className="adm-page-head">
       <div><h1>Products</h1><p>Manage your grocery products</p></div>
-      <button type="button" className="button button-primary" onClick={() => setFormTarget({})}><Plus size={15} />Add Product</button>
+      {canManage && <button type="button" className="button button-primary" onClick={() => setFormTarget({})}><Plus size={15} />Add Product</button>}
     </div>
 
     <section className="adm-panel adm-toolbar-panel">
@@ -108,8 +114,8 @@ export default function AdminProductsPage() {
         <div className="inline-error">{error}<button className="text-link" onClick={load}>Retry</button></div>
       ) : !products.length ? (
         <>
-          <EmptyState title="No products have been added yet" message="Add your first product to start selling on Janai." />
-          <div className="adm-empty-action"><button type="button" className="button button-primary" onClick={() => setFormTarget({})}><Plus size={15} />Add Product</button></div>
+          <EmptyState title="No products have been added yet" message={canManage ? 'Add your first product to start selling on Janai.' : 'Products will appear here once they are added.'} />
+          {canManage && <div className="adm-empty-action"><button type="button" className="button button-primary" onClick={() => setFormTarget({})}><Plus size={15} />Add Product</button></div>}
         </>
       ) : !filtered.length ? (
         <EmptyState title="No products found" message="Try changing your search or filters." />
@@ -128,8 +134,12 @@ export default function AdminProductsPage() {
                     <td>{product.stock} {product.unit}</td>
                     <td><span className={`status-pill${statusInfo.key === 'out_of_stock' ? ' is-muted' : ''}`}>{statusInfo.label}</span></td>
                     <td>
-                      <button type="button" className="table-action" onClick={() => setFormTarget(product)}><Pencil size={14} />Edit</button>
-                      <button type="button" className="table-action danger" onClick={() => setDeleteTarget(product)}><Trash2 size={14} />Delete</button>
+                      {canManage && <>
+                        <button type="button" className="table-action" onClick={() => setFormTarget(product)}><Pencil size={14} />Edit</button>
+                        <button type="button" className="table-action danger" onClick={() => setDeleteTarget(product)}><Trash2 size={14} />Delete</button>
+                      </>}
+                      {!canManage && canUpdateStock && <button type="button" className="table-action" onClick={() => setStockTarget(product)}><Pencil size={14} />Update stock</button>}
+                      {!canManage && !canUpdateStock && <span className="adm-muted">View only</span>}
                     </td>
                   </tr>
                 })}
@@ -144,6 +154,8 @@ export default function AdminProductsPage() {
         </>
       )}
     </section>
+
+    {stockTarget && <StockUpdateModal product={stockTarget} onClose={() => setStockTarget(null)} onSaved={load} />}
 
     {formTarget && <ProductFormModal product={formTarget._id ? formTarget : null} onClose={() => setFormTarget(null)} onSaved={load} />}
 

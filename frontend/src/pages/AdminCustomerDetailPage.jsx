@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ArrowLeft, CalendarDays, Hash, Mail, MapPin, Phone, ShoppingBag, Wallet } from 'lucide-react'
 import api, { getApiError } from '../services/api'
+import { useAuth } from '../context/AppContexts'
 import { EmptyState, Loader, formatPrice } from '../components/UI'
 import { OrderDetailsModal, OrderTable } from './AdminOrderPages'
 
@@ -33,6 +34,7 @@ function Pagination({ page, pages, onChange }) {
 
 export default function AdminCustomerDetailPage() {
   const { id } = useParams()
+  const { can } = useAuth()
   const [customer, setCustomer] = useState(null)
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
@@ -71,6 +73,8 @@ export default function AdminCustomerDetailPage() {
       <div className="adm-page-head">
         <div className="adm-product-cell"><span className="adm-avatar">{initials(customer)}</span><div><h1>{`${customer.firstName} ${customer.lastName}`.trim() || 'Customer'}</h1><p>Customer since {formatDate(customer.createdAt)}</p></div></div>
       </div>
+
+      {!can('customers:view_contact') && <p className="adm-note">Customer email addresses and phone numbers are partly hidden for your account.</p>}
 
       <section className="adm-panel">
         <h2 className="adm-modal-section-title">Customer profile</h2>

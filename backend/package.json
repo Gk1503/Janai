@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "seed": "node seed.js"
+    "seed": "node seed.js",
+    "test": "node --test test/phase1.test.js test/phase2.test.js test/phase3.test.js test/frontend-permissions.test.js test/phase6.test.js",
+    "migrate:user-indexes": "node scripts/migrateUserIndexes.js"
   },
   "keywords": [],
   "author": "",

@@ -1230,3 +1230,32 @@ h3 { font-size: 16px; }
   .adm-profile-item, .adm-address-card { padding: 12px; }
 }
 
+
+/* Admin orders: status tabs and summary cards */
+.adm-status-tabs { display: flex; gap: 6px; overflow-x: auto; padding: 4px; border: 1px solid var(--line); border-radius: 12px; background: #fff; scrollbar-width: thin; }
+.adm-status-tab { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 9px; color: var(--muted); font-size: 14px; font-weight: 600; white-space: nowrap; text-decoration: none; }
+.adm-status-tab span { padding: 1px 8px; border-radius: 99px; background: var(--light-green); font-size: 12px; }
+.adm-status-tab:hover { color: var(--ink); }
+.adm-status-tab.active { background: var(--green); color: #fff; }
+.adm-status-tab.active span { background: rgba(255, 255, 255, .22); color: #fff; }
+@media (max-width: 900px) { .adm-order-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.adm-order-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.adm-order-stat { display: grid; gap: 2px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+.adm-order-stat-icon { display: grid; place-items: center; width: 32px; height: 32px; margin-bottom: 6px; border-radius: 9px; background: var(--light-green); color: var(--green); }
+.adm-order-stat small { color: var(--muted); font-size: 12px; }
+.adm-order-stat strong { font-size: 20px; color: var(--ink); }
+@media (max-width: 560px) { .adm-order-stats { gap: 8px; } .adm-order-stat { padding: 12px; } }
+
+/* Staff & Access: permission grid and password row */
+.adm-perm-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.adm-perm-group { display: grid; gap: 8px; margin: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; min-width: 0; }
+.adm-perm-group legend { padding: 0 6px; font-size: 12px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--green); }
+.adm-perm-note { display: block; margin-top: 2px; font-size: 11px; font-weight: 500; font-style: normal; text-transform: none; letter-spacing: 0; color: var(--muted); }
+.adm-perm-item { display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: start; gap: 10px; font-size: 13.5px; cursor: pointer; }
+.adm-perm-item input { margin-top: 3px; accent-color: var(--green); }
+.adm-perm-item strong { display: block; font-weight: 700; color: var(--ink); }
+.adm-perm-item small { display: block; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.adm-perm-item code, .adm-detail-row code { font-size: 12px; }
+.adm-password-row { display: flex; align-items: center; gap: 8px; }
+.adm-password-row input { flex: 1 1 auto; }
+@media (max-width: 760px) { .adm-perm-grid { grid-template-columns: minmax(0, 1fr); } .adm-password-row { flex-wrap: wrap; } }

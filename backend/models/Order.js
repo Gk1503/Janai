@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { statusHistoryField } from '../utils/statusAudit.js';
 
 const itemSchema = new mongoose.Schema({
 	product: { type: mongoose.Schema.Types.ObjectId, ref: 'Product' },
@@ -32,6 +33,8 @@ const orderSchema = new mongoose.Schema({
 	paymentMethod: { type: String, enum: ['cod', 'online'], default: 'cod' },
 	paymentStatus: { type: String, enum: ['pending', 'paid', 'failed'], default: 'pending' },
 	orderStatus: { type: String, enum: ['placed', 'confirmed', 'preparing', 'out_for_delivery', 'delivered', 'cancelled'], default: 'placed', index: true },
+	// Append-only audit trail of status changes; excluded from queries unless explicitly selected.
+	statusHistory: statusHistoryField,
 }, { timestamps: true });
 
 export default mongoose.model('Order', orderSchema);

@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { CalendarDays, Clock, CreditCard, Eye, Mail, MapPin, Phone, ReceiptText, Search, StickyNote, User } from 'lucide-react'
+import { NavLink, useParams } from 'react-router-dom'
+import { CalendarDays, Clock, CreditCard, Eye, IndianRupee, Mail, MapPin, Phone, ReceiptText, Search, ShoppingBag, StickyNote, Truck, User } from 'lucide-react'
 import api, { getApiError } from '../services/api'
-import { useToast } from '../context/AppContexts'
+import { useAuth, useToast } from '../context/AppContexts'
+import { orderActions } from '../utils/permissions'
 import { EmptyState, formatPrice, Loader, Modal, ProductImage } from '../components/UI'
 
 const PAGE_SIZE = 10
@@ -28,18 +30,28 @@ const ACTIVE_STATUSES = ['placed', 'confirmed', 'preparing', 'out_for_delivery']
 const BULK_STATUSES = ['Pending', 'Reviewing', 'Approved', 'Rejected', 'Completed']
 const PAYMENT_METHODS = { cod: 'Cash on Delivery', online: 'Online payment' }
 
-const ORDER_VIEWS = {
-  all: { title: 'All Orders', description: 'Every customer order placed on Janai.', statusFilter: true, columns: ['id', 'customer', 'date', 'items', 'total', 'payment', 'status', 'actions'] },
-  pending: { title: 'Pending Orders', description: 'New orders waiting to be confirmed.', statuses: ['placed'], columns: ['id', 'customer', 'date', 'items', 'total', 'payment', 'status', 'actions'] },
-  processing: { title: 'Processing', description: 'Confirmed orders that are being prepared.', statuses: ['confirmed', 'preparing'], columns: ['id', 'customer', 'date', 'deliveryDate', 'items', 'total', 'status', 'actions'] },
-  'out-for-delivery': { title: 'Out for Delivery', description: 'Orders currently on their way to customers.', statuses: ['out_for_delivery'], columns: ['id', 'customer', 'deliveryDate', 'items', 'total', 'payment', 'status', 'actions'] },
-  delivered: { title: 'Delivered', description: 'Completed orders.', statuses: ['delivered'], columns: ['id', 'customer', 'deliveryDate', 'total', 'paymentStatus', 'status', 'actions'] },
-  cancelled: { title: 'Cancelled', description: 'Orders that were cancelled.', statuses: ['cancelled'], columns: ['id', 'customer', 'date', 'total', 'cancelInfo', 'status', 'actions'] },
+// Status tabs inside All Orders. "Processing" groups the backend's confirmed and preparing statuses.
+const ORDER_TABS = [
+  { key: 'all', label: 'All', statuses: null },
+  { key: 'pending', label: 'Pending', statuses: ['placed'] },
+  { key: 'processing', label: 'Processing', statuses: ['confirmed', 'preparing'] },
+  { key: 'out-for-delivery', label: 'Out for Delivery', statuses: ['out_for_delivery'] },
+  { key: 'delivered', label: 'Delivered', statuses: ['delivered'] },
+  { key: 'cancelled', label: 'Cancelled', statuses: ['cancelled'] },
+]
+const ORDER_COLUMNS = ['id', 'customer', 'date', 'items', 'total', 'paymentMethod', 'paymentStatus', 'status', 'actions']
+// Allowed admin transitions; mirrors nextStatuses in controllers/orderController.js, which enforces them.
+const NEXT_STATUSES = {
+  placed: ['confirmed', 'cancelled'],
+  confirmed: ['preparing', 'cancelled'],
+  preparing: ['out_for_delivery', 'cancelled'],
+  out_for_delivery: ['delivered', 'cancelled'],
 }
 const PREORDER_VIEWS = {
   all: { title: 'All Pre Orders', description: 'Every pre-order scheduled by customers.', statusFilter: true, columns: ['id', 'customer', 'products', 'total', 'deliveryDate', 'timeSlot', 'status', 'actions'] },
   scheduled: { title: 'Scheduled', description: 'Active pre-orders with a delivery date from today onwards, soonest first.', upcoming: true, columns: ['id', 'customer', 'products', 'total', 'deliveryDate', 'timeSlot', 'status', 'actions'] },
 }
+const BULK_TABS = [{ key: 'all', label: 'All', to: '/admin/bulk-orders' }, { key: 'requests', label: 'Requests', to: '/admin/bulk-orders/requests' }]
 const BULK_VIEWS = {
   all: { title: 'All Bulk Orders', description: 'Every bulk order request received.', statusFilter: true },
   requests: { title: 'Requests', description: 'New requests awaiting a decision (Pending or Reviewing).', statuses: ['Pending', 'Reviewing'] },
@@ -88,6 +100,17 @@ function Pagination({ page, pages, onChange, label }) {
   </nav>
 }
 
+// Horizontal filter tabs; each is a real route so /admin/orders/pending etc. keep working.
+function StatusTabs({ tabs, active, label }) {
+  return <nav className="adm-status-tabs" aria-label={label}>
+    {tabs.map((tab) => <NavLink key={tab.key} to={tab.to} end className={`adm-status-tab${tab.key === active ? ' active' : ''}`}>{tab.label}{tab.count !== undefined && <span>{tab.count}</span>}</NavLink>)}
+  </nav>
+}
+
+function SummaryCards({ cards }) {
+  return <div className="adm-order-stats">{cards.map(({ icon: Icon, label, value }) => <article className="adm-order-stat" key={label}><span className="adm-order-stat-icon"><Icon size={18} /></span><small>{label}</small><strong>{value}</strong></article>)}</div>
+}
+
 // Search box + selects, matching the Products toolbar.
 function Toolbar({ searchInput, onSearch, placeholder, children, filtersActive, onReset }) {
   return <section className="adm-panel adm-toolbar-panel">
@@ -118,7 +141,7 @@ function ProductLines({ lines }) {
   return <span className="adm-product-lines">{lines.map((line, index) => <span key={`${line.name}-${index}`}>{line.name} <small>· {line.quantity} {line.unit}</small></span>)}</span>
 }
 
-function OrderCell({ column, order, onView, onAdvance, busyId }) {
+function OrderCell({ column, order, onView, onAdvance, busyId, canUpdate = false }) {
   const items = order.items || []
   switch (column) {
     case 'id': return <button type="button" className="adm-link-button" onClick={() => onView(order)}>{shortId(order._id)}</button>
@@ -136,7 +159,7 @@ function OrderCell({ column, order, onView, onAdvance, busyId }) {
     case 'status': return <OrderStatusBadge status={order.orderStatus} />
     case 'actions': {
       const next = NEXT_STEP[order.orderStatus]
-      return <span className="adm-row-actions"><button type="button" className="table-action" onClick={() => onView(order)}><Eye size={14} />View</button>{onAdvance && next && <button type="button" className="table-action is-primary" disabled={busyId === order._id} onClick={() => onAdvance(order, next.value)}>{next.label}</button>}</span>
+      return <span className="adm-row-actions"><button type="button" className="table-action" onClick={() => onView(order)}><Eye size={14} />View</button>{onAdvance && canUpdate && next && <button type="button" className="table-action is-primary" disabled={busyId === order._id} onClick={() => onAdvance(order, next.value)}>{next.label}</button>}</span>
     }
     default: return null
   }
@@ -146,12 +169,33 @@ const COLUMN_LABELS = { id: 'Order ID', customer: 'Customer', date: 'Order date'
 
 // Reusable order table; on phones each row becomes a labelled card (see .adm-responsive-table).
 export function OrderTable({ orders, columns, onView, onAdvance, busyId }) {
+  const { can } = useAuth()
   return <div className="admin-table-wrap">
     <table className="admin-table adm-responsive-table">
       <thead><tr>{columns.map((column) => <th key={column}>{COLUMN_LABELS[column]}</th>)}</tr></thead>
-      <tbody>{orders.map((order) => <tr key={order._id}>{columns.map((column) => <td key={column} data-label={COLUMN_LABELS[column]} className={`adm-col-${column}`}><OrderCell column={column} order={order} onView={onView} onAdvance={onAdvance} busyId={busyId} /></td>)}</tr>)}</tbody>
+      <tbody>{orders.map((order) => <tr key={order._id}>{columns.map((column) => <td key={column} data-label={COLUMN_LABELS[column]} className={`adm-col-${column}`}><OrderCell column={column} order={order} onView={onView} onAdvance={onAdvance} busyId={busyId} canUpdate={orderActions(can, order).canUpdate} /></td>)}</tr>)}</tbody>
     </table>
   </div>
+}
+
+const ACTOR_ROLES = { owner: 'Owner', staff: 'Staff', customer: 'Customer' }
+
+// Server-recorded status changes. The backend only sends this to users allowed to see it; when the
+// field is absent nothing is rendered.
+function StatusHistory({ history, labelFor }) {
+  if (!Array.isArray(history)) return null
+  return <section className="adm-detail-section">
+    <h3 className="adm-modal-section-title"><Clock size={14} />Status history</h3>
+    {history.length === 0 ? <p className="adm-muted">No status changes have been recorded for this order yet.</p> : <ul className="adm-order-items adm-bulk-items">
+      {[...history].reverse().map((entry, index) => <li key={`${entry.at}-${index}`}>
+        <span className="adm-cell-stack">
+          <strong>{labelFor(entry.fromStatus)} → {labelFor(entry.toStatus)}</strong>
+          <small>{entry.actor?.name || entry.actor?.loginId || 'Unknown'}{entry.actor?.loginId && entry.actor?.name ? ` (${entry.actor.loginId})` : ''} · {ACTOR_ROLES[entry.actor?.role] || 'User'}</small>
+        </span>
+        <small>{formatDateTime(entry.at)}</small>
+      </li>)}
+    </ul>}
+  </section>
 }
 
 function DetailRow({ label, children }) {
@@ -161,6 +205,10 @@ function DetailRow({ label, children }) {
 
 export function OrderDetailsModal({ order, onClose, onStatusChange, busy, readOnly = false }) {
   const [status, setStatus] = useState(order.orderStatus)
+  const { can } = useAuth()
+  const actions = orderActions(can, order)
+  // Only the next steps this user is allowed to apply; "Cancelled" needs the cancel permission for this order type.
+  const nextOptions = (NEXT_STATUSES[order.orderStatus] || []).filter((value) => value !== 'cancelled' || actions.canCancel)
   const [confirmCancel, setConfirmCancel] = useState(false)
   useEffect(() => { setStatus(order.orderStatus) }, [order.orderStatus])
   const address = order.deliveryAddress || {}
@@ -238,10 +286,12 @@ export function OrderDetailsModal({ order, onClose, onStatusChange, busy, readOn
       </section>
     </div>
 
-    {!readOnly && <section className="adm-detail-section adm-status-editor">
+    <StatusHistory history={order.statusHistory} labelFor={statusLabel} />
+
+    {!readOnly && actions.canUpdate && nextOptions.length > 0 && <section className="adm-detail-section adm-status-editor">
       <h3 className="adm-modal-section-title">Update status</h3>
       <div className="adm-status-row">
-        <label className="sort-select"><select value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Order status">{ORDER_STATUSES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+        <label className="sort-select"><select value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Order status">{[order.orderStatus, ...nextOptions].map((value) => <option key={value} value={value}>{statusLabel(value)}</option>)}</select></label>
         <button type="button" className="button button-primary" disabled={busy || status === order.orderStatus} onClick={save}>{busy ? 'Saving…' : 'Save status'}</button>
       </div>
       {confirmCancel && <div className="adm-confirm-box" role="alert">
@@ -255,7 +305,9 @@ export function OrderDetailsModal({ order, onClose, onStatusChange, busy, readOn
 // Shared page for Orders and Pre Orders: both live in the Order collection, separated by orderType.
 function OrderListPage({ kind, view }) {
   const toast = useToast()
-  const config = (kind === 'preorder' ? PREORDER_VIEWS : ORDER_VIEWS)[view]
+  const isOrders = kind === 'order'
+  const tab = ORDER_TABS.find((item) => item.key === view) || ORDER_TABS[0]
+  const config = isOrders ? { title: 'All Orders', description: 'Every customer order placed on Janai.', columns: ORDER_COLUMNS } : PREORDER_VIEWS[view]
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -285,7 +337,7 @@ function OrderListPage({ kind, view }) {
     setBusyId(order._id)
     try {
       const { data } = await api.patch(`/admin/orders/${order._id}/status`, { orderStatus })
-      setOrders((current) => current.map((item) => item._id === order._id ? { ...item, orderStatus: data.order.orderStatus, updatedAt: data.order.updatedAt } : item))
+      setOrders((current) => current.map((item) => item._id === order._id ? { ...item, orderStatus: data.order.orderStatus, updatedAt: data.order.updatedAt, statusHistory: data.order.statusHistory } : item))
       toast(`${shortId(order._id)} marked as ${statusLabel(orderStatus).toLowerCase()}.`)
     } catch (requestError) {
       toast(getApiError(requestError), 'error')
@@ -297,7 +349,7 @@ function OrderListPage({ kind, view }) {
   const today = dayStart().getTime()
   const dateField = kind === 'preorder' ? 'deliveryDate' : 'createdAt'
   let rows = orders
-    .filter((order) => !config.statuses || config.statuses.includes(order.orderStatus))
+    .filter((order) => !isOrders || !tab.statuses || tab.statuses.includes(order.orderStatus))
     .filter((order) => !config.upcoming || (ACTIVE_STATUSES.includes(order.orderStatus) && new Date(order.deliveryDate).getTime() >= today))
     .filter((order) => status === 'All' || order.orderStatus === status)
     .filter((order) => matchesDate(order[dateField], dateFilter))
@@ -308,6 +360,15 @@ function OrderListPage({ kind, view }) {
   const filtersActive = Boolean(search.trim()) || status !== 'All' || dateFilter !== 'all'
   const selected = orders.find((order) => order._id === selectedId)
   const noun = kind === 'preorder' ? 'pre-orders' : 'orders'
+  const countFor = (statuses) => orders.filter((order) => !statuses || statuses.includes(order.orderStatus)).length
+  const orderTabs = ORDER_TABS.map((item) => ({ key: item.key, label: item.label, to: item.key === 'all' ? '/admin/orders' : `/admin/orders/${item.key}`, count: loading || error ? undefined : countFor(item.statuses) }))
+  const preorderTabs = [{ key: 'all', label: 'All', to: '/admin/pre-orders' }, { key: 'scheduled', label: 'Scheduled', to: '/admin/pre-orders/scheduled' }]
+  const summary = [
+    { icon: ShoppingBag, label: 'Total orders', value: orders.length },
+    { icon: Clock, label: 'Pending', value: countFor(['placed']) },
+    { icon: Truck, label: 'In progress', value: countFor(['confirmed', 'preparing', 'out_for_delivery']) },
+    { icon: IndianRupee, label: 'Delivered revenue', value: formatPrice(orders.filter((order) => order.orderStatus === 'delivered').reduce((sum, order) => sum + order.totalAmount, 0)) },
+  ]
 
   return <div className="adm-products-page adm-orders-page">
     <div className="adm-page-head">
@@ -315,8 +376,11 @@ function OrderListPage({ kind, view }) {
       {!loading && !error && <span className="adm-count-chip"><strong>{rows.length}</strong> {rows.length === 1 ? noun.slice(0, -1) : noun}</span>}
     </div>
 
+    {isOrders && !loading && !error && <SummaryCards cards={summary} />}
+    <StatusTabs tabs={isOrders ? orderTabs : preorderTabs} active={isOrders ? tab.key : view} label={isOrders ? 'Order status' : 'Pre-order views'} />
+
     <Toolbar searchInput={searchInput} onSearch={onSearch} placeholder={`Search ${noun} by ID, customer, phone or product…`} filtersActive={filtersActive} onReset={() => { reset(); setStatus('All'); setDateFilter('all') }}>
-      {config.statusFilter && <label className="sort-select"><select value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Filter by status"><option value="All">All statuses</option>{ORDER_STATUSES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>}
+      {!isOrders && config.statusFilter && <label className="sort-select"><select value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Filter by status"><option value="All">All statuses</option>{ORDER_STATUSES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>}
       <label className="sort-select"><select value={dateFilter} onChange={(event) => setDateFilter(event.target.value)} aria-label="Filter by date">{(kind === 'preorder' ? DELIVERY_DATE_FILTERS : ORDER_DATE_FILTERS).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
     </Toolbar>
 
@@ -324,7 +388,7 @@ function OrderListPage({ kind, view }) {
       {loading ? <Loader label={`Loading ${noun}`} /> : error ? (
         <div className="inline-error">{error}<button className="text-link" onClick={load}>Retry</button></div>
       ) : !rows.length ? (
-        filtersActive ? <EmptyState title={`No ${noun} found`} message="Try changing your search or filters." /> : <EmptyState icon={kind === 'preorder' ? CalendarDays : Clock} title={`No ${config.title.toLowerCase()} yet`} message={`${kind === 'preorder' ? 'Pre-orders' : 'Orders'} in this list will appear here as customers place them.`} />
+        filtersActive ? <EmptyState title={`No ${noun} found`} message="Try changing your search or filters." /> : <EmptyState icon={kind === 'preorder' ? CalendarDays : Clock} title={isOrders ? (tab.key === 'all' ? 'No orders yet' : `No ${tab.label.toLowerCase()} orders`) : `No ${config.title.toLowerCase()} yet`} message={`${kind === 'preorder' ? 'Pre-orders' : 'Orders'} in this list will appear here as customers place them.`} />
       ) : <>
         <OrderTable orders={visible} columns={config.columns} onView={(order) => setSelectedId(order._id)} onAdvance={updateStatus} busyId={busyId} />
         <Pagination page={page} pages={pages} onChange={setPage} label={`${config.title} pages`} />
@@ -335,10 +399,14 @@ function OrderListPage({ kind, view }) {
   </div>
 }
 
-export function AdminOrdersPage({ view = 'all' }) { return <OrderListPage kind="order" view={view} /> }
+export function AdminOrdersPage() {
+  const { view = 'all' } = useParams()
+  return <OrderListPage kind="order" view={view} />
+}
 export function AdminPreOrdersPage({ view = 'all' }) { return <OrderListPage kind="preorder" view={view} /> }
 
 function BulkRequestModal({ request, onClose, onStatusChange, busy }) {
+  const { can } = useAuth()
   const [status, setStatus] = useState(request.status)
   useEffect(() => { setStatus(request.status) }, [request.status])
   return <Modal title={`Bulk request ${shortId(request._id)}`} onClose={onClose} wide>
@@ -374,18 +442,21 @@ function BulkRequestModal({ request, onClose, onStatusChange, busy }) {
       <p className="adm-muted">Pricing is agreed with the customer during review; the request does not store an amount.</p>
     </section>
     {request.additionalRequirements && <p className="adm-note"><StickyNote size={15} /><span><strong>Additional requirements:</strong> {request.additionalRequirements}</span></p>}
-    <section className="adm-detail-section adm-status-editor">
+    <StatusHistory history={request.statusHistory} labelFor={(value) => value} />
+
+    {can('bulk:update') && <section className="adm-detail-section adm-status-editor">
       <h3 className="adm-modal-section-title">Update status</h3>
       <div className="adm-status-row">
         <label className="sort-select"><select value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Request status">{BULK_STATUSES.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
         <button type="button" className="button button-primary" disabled={busy || status === request.status} onClick={() => onStatusChange(request, status)}>{busy ? 'Saving…' : 'Save status'}</button>
       </div>
-    </section>
+    </section>}
   </Modal>
 }
 
 export function AdminBulkOrdersPage({ view = 'all' }) {
   const toast = useToast()
+  const { can } = useAuth()
   const config = BULK_VIEWS[view]
   const [requests, setRequests] = useState([])
   const [loading, setLoading] = useState(true)
@@ -440,6 +511,8 @@ export function AdminBulkOrdersPage({ view = 'all' }) {
       {!loading && !error && <span className="adm-count-chip"><strong>{rows.length}</strong> {rows.length === 1 ? 'request' : 'requests'}</span>}
     </div>
 
+    <StatusTabs tabs={BULK_TABS} active={view} label="Bulk order views" />
+
     <Toolbar searchInput={searchInput} onSearch={onSearch} placeholder="Search by ID, name, business, phone or product…" filtersActive={filtersActive} onReset={() => { reset(); setStatus('All') }}>
       <label className="sort-select"><select value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Filter by status"><option value="All">All statuses</option>{statusOptions.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
     </Toolbar>
@@ -460,7 +533,7 @@ export function AdminBulkOrdersPage({ view = 'all' }) {
               <td data-label="Products"><ProductLines lines={request.products} /></td>
               <td data-label="Required date">{formatDate(request.requiredDate)}</td>
               <td data-label="Status"><span className={`status-pill status-${request.status.toLowerCase()}`}>{request.status}</span></td>
-              <td data-label="Actions" className="adm-col-actions"><span className="adm-row-actions"><button type="button" className="table-action" onClick={() => setSelectedId(request._id)}><Eye size={14} />View</button>{request.status === 'Pending' && <button type="button" className="table-action is-primary" disabled={busyId === request._id} onClick={() => updateStatus(request, 'Reviewing')}>Start review</button>}</span></td>
+              <td data-label="Actions" className="adm-col-actions"><span className="adm-row-actions"><button type="button" className="table-action" onClick={() => setSelectedId(request._id)}><Eye size={14} />View</button>{can('bulk:update') && request.status === 'Pending' && <button type="button" className="table-action is-primary" disabled={busyId === request._id} onClick={() => updateStatus(request, 'Reviewing')}>Start review</button>}</span></td>
             </tr>)}</tbody>
           </table>
         </div>

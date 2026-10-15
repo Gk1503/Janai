@@ -3,7 +3,7 @@ import Product from '../models/Product.js';
 import asyncHandler from '../utils/asyncHandler.js';
 
 export const getCart = asyncHandler(async (req, res) => {
-  const cart = await Cart.findOne({ user: req.user.id }).populate('items.product');
+  const cart = await Cart.findOne({ user: req.user.id }).populate({ path: 'items.product', select: '-vendors' });
   res.json({ cart: cart || { user: req.user.id, items: [] } });
 });
 
@@ -19,7 +19,7 @@ export const addToCart = asyncHandler(async (req, res) => {
   if (existing) existing.quantity = nextQuantity;
   else cart.items.push({ product: product.id, quantity });
   await cart.save();
-  await cart.populate('items.product');
+  await cart.populate({ path: 'items.product', select: '-vendors' });
   res.json({ cart });
 });
 
@@ -33,7 +33,7 @@ export const updateCartItem = asyncHandler(async (req, res) => {
   if (!item) return res.status(404).json({ message: 'Cart item not found.' });
   item.quantity = quantity;
   await cart.save();
-  await cart.populate('items.product');
+  await cart.populate({ path: 'items.product', select: '-vendors' });
   res.json({ cart });
 });
 
@@ -42,7 +42,7 @@ export const removeCartItem = asyncHandler(async (req, res) => {
   if (cart) {
     cart.items = cart.items.filter((item) => String(item.product) !== req.params.productId);
     await cart.save();
-    await cart.populate('items.product');
+    await cart.populate({ path: 'items.product', select: '-vendors' });
   }
   res.json({ cart: cart || { user: req.user.id, items: [] } });
 });

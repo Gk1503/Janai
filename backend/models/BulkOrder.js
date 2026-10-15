@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { statusHistoryField } from '../utils/statusAudit.js';
 
 const bulkOrderSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
@@ -12,6 +13,8 @@ const bulkOrderSchema = new mongoose.Schema({
   deliveryAddress: { type: String, required: true, trim: true },
   additionalRequirements: { type: String, trim: true, maxlength: 2000, default: '' },
   status: { type: String, enum: ['Pending', 'Reviewing', 'Approved', 'Rejected', 'Completed'], default: 'Pending' },
+  // Append-only audit trail of status changes; excluded from queries unless explicitly selected.
+  statusHistory: statusHistoryField,
 }, { timestamps: true });
 
 export default mongoose.model('BulkOrder', bulkOrderSchema);

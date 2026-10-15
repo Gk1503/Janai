@@ -1,5 +1,7 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import api, { TOKEN_KEY } from '../services/api'
+import { createCan, hasPanelAccess, isOwnerAccount } from '../utils/permissions'
+import { classifyAuthError } from '../utils/sessionErrors'
 
 const AuthContext = createContext(null)
 const CartContext = createContext(null)
@@ -19,6 +21,33 @@ export function AuthProvider({ children }) {
       setUser(null)
     }).finally(() => setAuthLoading(false))
   }, [])
+
+  // Session handling for every API call: an expired or revoked session returns to sign-in, and a pending
+  // forced password change re-reads the account so the change screen appears.
+  useEffect(() => {
+    const id = api.interceptors.response.use((response) => response, (error) => {
+      const action = classifyAuthError(error, Boolean(localStorage.getItem(TOKEN_KEY)))
+      if (action === 'sign-out') {
+        localStorage.removeItem(TOKEN_KEY)
+        setUser(null)
+      }
+      if (action === 'refresh-user') api.get('/auth/me').then(({ data }) => setUser(data.user)).catch(() => {})
+      return Promise.reject(error)
+    })
+    return () => api.interceptors.response.eject(id)
+  }, [])
+
+  // Re-reads the account so permission or status changes made by the owner show up.
+  async function refreshUser() {
+    const { data } = await api.get('/auth/me')
+    setUser(data.user)
+    return data.user
+  }
+
+  // UI-only convenience: the backend enforces every permission regardless of what this returns.
+  const can = useMemo(() => createCan(user), [user])
+  const isOwner = isOwnerAccount(user)
+  const panelAccess = hasPanelAccess(user)
 
   function saveSession(data) {
     localStorage.setItem(TOKEN_KEY, data.token)
@@ -57,7 +86,7 @@ export function AuthProvider({ children }) {
     setUser(null)
   }
 
-  return <AuthContext.Provider value={{ user, setUser, authLoading, login, adminLogin, loginWithOtp, register, updateProfile, logout }}>{children}</AuthContext.Provider>
+  return <AuthContext.Provider value={{ user, setUser, authLoading, login, adminLogin, loginWithOtp, register, updateProfile, logout, refreshUser, can, isOwner, hasPanelAccess: panelAccess }}>{children}</AuthContext.Provider>
 }
 
 export function CartProvider({ children }) {

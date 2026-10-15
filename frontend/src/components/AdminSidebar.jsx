@@ -1,26 +1,28 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { ChevronDown, ChevronUp, LogOut } from 'lucide-react'
 import { useAuth } from '../context/AppContexts'
 import { adminNavigation } from './adminNavigation'
+import { filterNavigation } from '../utils/permissions'
 
-const collapsibleLabels = adminNavigation.filter((group) => group.collapsible !== false).map((group) => group.label)
-const groupForPath = (pathname) => adminNavigation.find((group) => group.items.some((item) => pathname === item.path || (!item.end && pathname.startsWith(`${item.path}/`))))?.label
+const groupForPath = (navigation, pathname) => navigation.find((group) => group.items.some((item) => pathname === item.path || (!item.end && pathname.startsWith(`${item.path}/`))))?.label
 
 export default function AdminSidebar({ open = false, onNavigate = () => {} }) {
-  const { logout } = useAuth()
+  const { logout, can, isOwner } = useAuth()
   const { pathname } = useLocation()
+  // Only items the user may open are shown, and a group with nothing left disappears.
+  const navigation = useMemo(() => filterNavigation(adminNavigation, can, isOwner), [can, isOwner])
   // Groups start collapsed, except the one holding the current page so its active link is visible.
-  const [collapsedGroups, setCollapsedGroups] = useState(() => new Set(collapsibleLabels.filter((label) => label !== groupForPath(pathname))))
+  const [collapsedGroups, setCollapsedGroups] = useState(() => new Set(navigation.filter((group) => group.collapsible !== false).map((group) => group.label).filter((label) => label !== groupForPath(navigation, pathname))))
   useEffect(() => {
-    const active = groupForPath(pathname)
+    const active = groupForPath(navigation, pathname)
     setCollapsedGroups((current) => {
       if (!active || !current.has(active)) return current
       const next = new Set(current)
       next.delete(active)
       return next
     })
-  }, [pathname])
+  }, [pathname, navigation])
 
   function toggleGroup(label) {
     setCollapsedGroups((current) => {
@@ -38,7 +40,7 @@ export default function AdminSidebar({ open = false, onNavigate = () => {} }) {
     </div>
 
     <nav className="adm-sidebar-nav">
-      {adminNavigation.map((group) => {
+      {navigation.map((group) => {
         const collapsible = group.collapsible !== false
         const isOpen = !collapsible || !collapsedGroups.has(group.label)
         return <div className="adm-nav-group" key={group.label}>
