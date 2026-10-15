@@ -13,6 +13,8 @@ import bulkOrderRoutes from './routes/bulkOrderRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 import contactRoutes from './routes/contactRoutes.js';
 import { ensureDefaultAdmin } from './config/defaultAdmin.js';
+import { assertOwnerNotUsingDefaultPassword, assertSecureConfig } from './config/startupChecks.js';
+import { legacyEmailIndexPresent } from './config/userIndexes.js';
 import { ensureDefaultCategories } from './config/defaultCategories.js';
 import { errorHandler, notFound } from './middleware/errorHandler.js';
 
@@ -37,11 +39,29 @@ app.use(errorHandler);
 
 const port = process.env.PORT || 5000;
 
+try {
+  assertSecureConfig();
+} catch (error) {
+  console.error(error.message);
+  process.exit(1);
+}
+
+// Read-only notice; the index is replaced only by the explicit `npm run migrate:user-indexes`.
+async function warnAboutLegacyEmailIndex() {
+  if (await legacyEmailIndexPresent()) console.warn('Notice: the legacy unique email index is still present, so only one staff account without an email can exist. Run "npm run migrate:user-indexes" once to allow several.');
+}
+
 connectDB()
   .then(ensureDefaultAdmin)
+  .then(assertOwnerNotUsingDefaultPassword)
+  .then(warnAboutLegacyEmailIndex)
   .then(ensureDefaultCategories)
   .then(() => app.listen(port, () => console.log(`Server running on port ${port}`)))
   .catch((error) => {
+    if (error.message?.startsWith('Insecure production configuration')) {
+      console.error(error.message);
+      process.exit(1);
+    }
     const code = error.code || error.cause?.code;
     console.error('Startup failed: database connection could not be established.', code ? `[${code}]` : '');
     process.exit(1);

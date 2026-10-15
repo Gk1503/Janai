@@ -3,9 +3,11 @@ import AdminComingSoon from './components/AdminComingSoon'
 import AdminLayout from './components/AdminLayout'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
+import RequirePermission from './components/RequirePermission'
 import ScrollToTop from './components/ScrollToTop'
 import { AuthProvider, CartProvider, ToastProvider } from './context/AppContexts'
-import AdminPage from './pages/AdminPage'
+import AdminHomePage from './pages/AdminHomePage'
+import AdminStaffPage from './pages/AdminStaffPage'
 import AdminCategoriesPage from './pages/AdminCategoriesPage'
 import AdminCustomerDetailPage from './pages/AdminCustomerDetailPage'
 import AdminCustomersPage from './pages/AdminCustomersPage'
@@ -45,19 +47,41 @@ export default function App() {
     <Route path="admin/login" element={<AdminLoginPage />} />
     <Route element={<ProtectedRoute admin />}>
       <Route element={<AdminLayout />}>
-        <Route path="admin" element={<AdminPage />} />
-        <Route path="admin/products" element={<AdminProductsPage />} />
-        {/* key makes each sub-view a fresh page, so filters and pagination don't carry over between them */}
-        <Route path="admin/orders" element={<AdminOrdersPage key="orders-all" view="all" />} />
-        {['pending', 'processing', 'out-for-delivery', 'delivered', 'cancelled'].map((view) => <Route key={view} path={`admin/orders/${view}`} element={<AdminOrdersPage key={`orders-${view}`} view={view} />} />)}
-        <Route path="admin/pre-orders" element={<AdminPreOrdersPage key="pre-all" view="all" />} />
-        <Route path="admin/pre-orders/scheduled" element={<AdminPreOrdersPage key="pre-scheduled" view="scheduled" />} />
-        <Route path="admin/bulk-orders" element={<AdminBulkOrdersPage key="bulk-all" view="all" />} />
-        <Route path="admin/bulk-orders/requests" element={<AdminBulkOrdersPage key="bulk-requests" view="requests" />} />
-        <Route path="admin/categories" element={<AdminCategoriesPage />} />
-        <Route path="admin/customers" element={<AdminCustomersPage />} />
-        <Route path="admin/customers/:id" element={<AdminCustomerDetailPage />} />
-        <Route path="admin/*" element={<AdminComingSoon />} />
+        {/* Every group below is permission-gated: a page that is not allowed never mounts, so it fetches nothing.
+            The same permissions are enforced again by the backend on every API call. */}
+        <Route path="admin" element={<AdminHomePage />} />
+        <Route element={<RequirePermission any={['products:view', 'inventory:update']} />}>
+          <Route path="admin/products" element={<AdminProductsPage />} />
+        </Route>
+        <Route element={<RequirePermission any={['orders:view']} />}>
+          {/* :view is the status tab (pending, processing, ...); the list stays mounted while switching tabs */}
+          <Route path="admin/orders/:view?" element={<AdminOrdersPage />} />
+        </Route>
+        <Route element={<RequirePermission any={['preorders:view']} />}>
+          <Route path="admin/pre-orders" element={<AdminPreOrdersPage key="pre-all" view="all" />} />
+          <Route path="admin/pre-orders/scheduled" element={<AdminPreOrdersPage key="pre-scheduled" view="scheduled" />} />
+        </Route>
+        <Route element={<RequirePermission any={['bulk:view']} />}>
+          <Route path="admin/bulk-orders" element={<AdminBulkOrdersPage key="bulk-all" view="all" />} />
+          <Route path="admin/bulk-orders/requests" element={<AdminBulkOrdersPage key="bulk-requests" view="requests" />} />
+        </Route>
+        <Route element={<RequirePermission any={['categories:manage']} />}>
+          <Route path="admin/categories" element={<AdminCategoriesPage />} />
+        </Route>
+        <Route element={<RequirePermission any={['customers:view']} />}>
+          <Route path="admin/customers" element={<AdminCustomersPage />} />
+          <Route path="admin/customers/:id" element={<AdminCustomerDetailPage />} />
+        </Route>
+        <Route element={<RequirePermission ownerOnly />}>
+          <Route path="admin/staff" element={<AdminStaffPage />} />
+        </Route>
+        <Route element={<RequirePermission any={['delivery:view']} />}>
+          <Route path="admin/delivery" element={<AdminComingSoon />} />
+        </Route>
+        {/* Everything else under /admin is a placeholder and owner-only. */}
+        <Route element={<RequirePermission ownerOnly />}>
+          <Route path="admin/*" element={<AdminComingSoon />} />
+        </Route>
       </Route>
     </Route>
   </Routes></BrowserRouter></CartProvider></AuthProvider></ToastProvider>

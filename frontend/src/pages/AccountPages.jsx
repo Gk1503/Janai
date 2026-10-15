@@ -3,12 +3,13 @@ import { ArrowLeft, ArrowRight, CalendarDays, Check, Leaf, Mail, MapPin, Phone, 
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import api, { getApiError } from '../services/api'
 import { useAuth, useToast } from '../context/AppContexts'
+import { hasPanelAccess } from '../utils/permissions'
 import { Field, PhoneInput } from '../components/Forms'
 import { hasErrors, validateEmail, validateMobile, validateName, validateRequired } from '../utils/validation'
 
 const authCategories = [['Fruits', '/fruit.jpg'], ['Vegetables', '/Vegatables.png'], ['Groceries', '/grocery.jpg']]
 
-function AuthFrame({ eyebrow, title, description, children, footer, standalone = false }) {
+export function AuthFrame({ eyebrow, title, description, children, footer, standalone = false }) {
   return <section className="auth-page"><aside className="auth-photo"><img src="/Vegatables.png" alt="" aria-hidden="true" /><div className="auth-photo-copy"><span className="eyebrow"><Leaf size={14} />FRESH · LOCAL · DELIVERED</span><h2>Fresh fruits, vegetables &amp; groceries — at your doorstep.</h2><div className="auth-chips">{authCategories.map(([label, image]) => <span key={label}><img src={image} alt="" />{label}</span>)}</div><ul><li><Truck size={16} />Delivery on the date you choose</li><li><CalendarDays size={16} />Pre-order for later in a few taps</li><li><Sprout size={16} />Bulk orders for businesses &amp; events</li></ul></div></aside><div className="auth-panel">{!standalone && <Link className="auth-back" to="/"><ArrowLeft size={16} />Back to Home</Link>}<div className="auth-panel-inner">{standalone ? <div className="auth-logo"><img src="/Janai-logo.jpg" alt="Janai" /></div> : <Link className="auth-logo" to="/" aria-label="Janai home"><img src="/Janai-logo.jpg" alt="Janai, Fruits Vegetables Groceries" /></Link>}<span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p className="auth-description">{description}</p>{children}{footer && <div className="auth-footer">{footer}</div>}</div></div></section>
 }
 
@@ -166,7 +167,7 @@ export function AdminLoginPage() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    if (user?.role === 'admin') navigate('/admin', { replace: true })
+    if (hasPanelAccess(user)) navigate('/admin', { replace: true })
   }, [user, navigate])
 
   async function submit(event) {

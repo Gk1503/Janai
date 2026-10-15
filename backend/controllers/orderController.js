@@ -2,6 +2,9 @@ import Cart from '../models/Cart.js';
 import Order from '../models/Order.js';
 import Product from '../models/Product.js';
 import asyncHandler from '../utils/asyncHandler.js';
+import { ORDER_TYPE_PERMISSIONS, hasPermission, orderTypeCondition, viewableOrderTypes } from '../config/permissions.js';
+import { maskOrder } from '../utils/privacy.js';
+import { buildStatusEntry, statusUpdateWithAudit, withPresentedHistory, withoutStatusHistory } from '../utils/statusAudit.js';
 
 const statuses = ['placed', 'confirmed', 'preparing', 'out_for_delivery', 'delivered', 'cancelled'];
 const timeSlots = ['8:00 AM - 10:00 AM', '10:00 AM - 12:00 PM', '12:00 PM - 2:00 PM', '2:00 PM - 4:00 PM', '4:00 PM - 6:00 PM', '6:00 PM - 8:00 PM'];
@@ -69,6 +72,20 @@ export const listOrders = asyncHandler(async (req, res) => {
   res.json({ orders });
 });
 
+// Admin-panel listing. Customer-facing /orders and /preorders keep using listOrders above, where
+// anyone other than the owner only ever receives their own orders.
+export const listAdminOrders = asyncHandler(async (req, res) => {
+  const requested = req.query.type ? String(req.query.type) : null;
+  if (requested && !ORDER_TYPE_PERMISSIONS[requested]) return res.status(400).json({ message: 'Choose a valid order type.' });
+  const allowed = viewableOrderTypes(req.user);
+  if (requested ? !allowed.includes(requested) : !allowed.length) return res.status(403).json({ message: 'You do not have permission to view these orders.' });
+  const filter = {};
+  if (requested || req.user.role !== 'admin') filter.orderType = orderTypeCondition(requested ? [requested] : allowed);
+  // History is requested explicitly; order types the viewer cannot see were already excluded by the filter.
+  const orders = await Order.find(filter).select('+statusHistory').populate('user', 'firstName lastName email phone').sort({ createdAt: -1 });
+  res.json({ orders: orders.map((order) => withPresentedHistory(maskOrder(order, req.user), req.user, true)) });
+});
+
 export const getOrder = asyncHandler(async (req, res) => {
   const order = await Order.findById(req.params.id).populate('user', 'firstName lastName email phone');
   if (!order) return res.status(404).json({ message: 'Order not found.' });
@@ -80,14 +97,57 @@ export const cancelPreOrder = asyncHandler(async (req, res) => {
   const order = await Order.findOne({ _id: req.params.id, user: req.user.id, orderType: 'preorder' });
   if (!order) return res.status(404).json({ message: 'Pre-order not found.' });
   if (order.orderStatus !== 'placed' || order.deliveryDate <= new Date()) return res.status(409).json({ message: 'This pre-order can no longer be cancelled.' });
-  order.orderStatus = 'cancelled';
-  await order.save();
-  res.json({ order, message: 'Pre-order cancelled.' });
+  // Conditional on the state we just validated, and written together with its audit entry.
+  const cancelled = await Order.findOneAndUpdate(
+    { _id: order.id, user: req.user.id, orderType: 'preorder', orderStatus: 'placed' },
+    statusUpdateWithAudit('orderStatus', 'cancelled', buildStatusEntry(req.user, 'preorder', 'placed', 'cancelled')),
+    { new: true, runValidators: true },
+  );
+  if (!cancelled) return res.status(409).json({ message: 'This pre-order can no longer be cancelled.' });
+  res.json({ order: withoutStatusHistory(cancelled), message: 'Pre-order cancelled.' });
 });
 
+// Normal flow: placed -> confirmed -> preparing -> out_for_delivery -> delivered. Active orders can be cancelled; delivered and cancelled are final.
+const nextStatuses = {
+  placed: ['confirmed', 'cancelled'],
+  confirmed: ['preparing', 'cancelled'],
+  preparing: ['out_for_delivery', 'cancelled'],
+  out_for_delivery: ['delivered', 'cancelled'],
+  delivered: [],
+  cancelled: [],
+};
+
 export const updateOrderStatus = asyncHandler(async (req, res) => {
-  if (!statuses.includes(req.body.orderStatus)) return res.status(400).json({ message: 'Choose a valid order status.' });
-  const order = await Order.findByIdAndUpdate(req.params.id, { orderStatus: req.body.orderStatus }, { new: true, runValidators: true });
-  if (!order) return res.status(404).json({ message: 'Order not found.' });
-  res.json({ order });
+  const { orderStatus } = req.body;
+  if (!statuses.includes(orderStatus)) return res.status(400).json({ message: 'Choose a valid order status.' });
+  const current = await Order.findById(req.params.id);
+  if (!current) return res.status(404).json({ message: 'Order not found.' });
+  // Each order type is governed by its own permissions; cancelling a normal order needs orders:cancel.
+  const access = ORDER_TYPE_PERMISSIONS[current.orderType || 'normal'];
+  if (!access || !hasPermission(req.user, access.update) || (orderStatus === 'cancelled' && !hasPermission(req.user, access.cancel))) return res.status(403).json({ message: 'You do not have permission to change this order.' });
+  if (!nextStatuses[current.orderStatus].includes(orderStatus)) return res.status(409).json({ message: `An order that is ${current.orderStatus.replaceAll('_', ' ')} cannot be changed to ${orderStatus.replaceAll('_', ' ')}.` });
+  // Conditional on the status we validated against, so two admins can't both apply a transition.
+  // The status change and its audit entry are one atomic document update.
+  const entry = buildStatusEntry(req.user, current.orderType || 'normal', current.orderStatus, orderStatus);
+  const order = await Order.findOneAndUpdate({ _id: current.id, orderStatus: current.orderStatus }, statusUpdateWithAudit('orderStatus', orderStatus, entry), { new: true, runValidators: true }).select('+statusHistory');
+  if (!order) return res.status(409).json({ message: 'This order was just updated by someone else. Refresh and try again.' });
+  const presented = withPresentedHistory(maskOrder(order, req.user), req.user, true);
+  // Normal orders reserve stock at checkout; pre-orders do not. The conditional update above lets exactly
+  // one request win a cancellation, so each reservation is returned at most once.
+  if (orderStatus === 'cancelled' && order.orderType === 'normal') {
+    const lines = order.items.filter((item) => item.product);
+    const results = await Promise.allSettled(lines.map((item) => Product.updateOne({ _id: item.product }, { $inc: { stock: item.quantity } })));
+    // A product that no longer exists matches nothing, which also means its stock was not restored.
+    const failed = lines.filter((item, index) => results[index].status === 'rejected' || results[index].value?.matchedCount === 0);
+    if (failed.length) {
+      console.error(`Stock restoration incomplete for cancelled order ${order.id}: ${failed.length} of ${lines.length} item(s).`);
+      // The cancellation itself is persisted and audited, so say exactly that instead of reporting plain success.
+      return res.status(500).json({
+        code: 'STOCK_RESTORE_FAILED',
+        message: `The order was cancelled and recorded, but stock could not be restored for: ${failed.map((item) => item.name).join(', ')}. Adjust inventory manually; do not cancel again.`,
+        order: presented,
+      });
+    }
+  }
+  res.json({ order: presented });
 });

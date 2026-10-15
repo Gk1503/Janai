@@ -1,65 +1,51 @@
-import { BarChart3, Bell, Bike, Boxes, CalendarClock, CalendarDays, ChefHat, CircleX, Clock, CreditCard, Inbox, IndianRupee, LayoutDashboard, Package, PackageCheck, Settings, ShoppingBag, Tags, Truck, UserRoundCheck, Users } from 'lucide-react'
+import { BarChart3, Bell, Boxes, CalendarDays, CreditCard, LayoutDashboard, Package, Settings, ShieldCheck, ShoppingBag, Tags, Truck, UserRoundCheck, Users } from 'lucide-react'
 
+// `access` decides who sees an item: { permission } | { any: [...] } | { owner: true }. Items without it
+// are treated as owner-only. See utils/permissions.js; the backend enforces access regardless.
 export const adminNavigation = [
   {
     label: 'MAIN',
     collapsible: false,
     items: [
-      { label: 'Dashboard', path: '/admin', end: true, icon: LayoutDashboard },
+      { label: 'Dashboard', path: '/admin', end: true, icon: LayoutDashboard, access: { owner: true } },
     ],
   },
   {
     label: 'ORDERS',
     items: [
-      { label: 'All Orders', path: '/admin/orders', end: true, icon: ShoppingBag },
-      { label: 'Pending', path: '/admin/orders/pending', icon: Clock },
-      { label: 'Processing', path: '/admin/orders/processing', icon: ChefHat },
-      { label: 'Out for Delivery', path: '/admin/orders/out-for-delivery', icon: Bike },
-      { label: 'Delivered', path: '/admin/orders/delivered', icon: PackageCheck },
-      { label: 'Cancelled', path: '/admin/orders/cancelled', icon: CircleX },
-    ],
-  },
-  {
-    label: 'PRE ORDERS',
-    items: [
-      { label: 'All Pre Orders', path: '/admin/pre-orders', end: true, icon: CalendarDays },
-      { label: 'Scheduled', path: '/admin/pre-orders/scheduled', icon: CalendarClock },
-    ],
-  },
-  {
-    label: 'BULK ORDERS',
-    items: [
-      { label: 'All Bulk Orders', path: '/admin/bulk-orders', end: true, icon: Boxes },
-      { label: 'Requests', path: '/admin/bulk-orders/requests', icon: Inbox },
+      { label: 'All Orders', path: '/admin/orders', icon: ShoppingBag, access: { permission: 'orders:view' } },
+      { label: 'Pre Orders', path: '/admin/pre-orders', icon: CalendarDays, access: { permission: 'preorders:view' } },
+      { label: 'Bulk Orders', path: '/admin/bulk-orders', icon: Boxes, access: { permission: 'bulk:view' } },
     ],
   },
   {
     label: 'PRODUCTS',
     items: [
-      { label: 'Products', path: '/admin/products', icon: Package },
-      { label: 'Categories', path: '/admin/categories', icon: Tags },
+      { label: 'Products', path: '/admin/products', icon: Package, access: { any: ['products:view', 'inventory:update'] } },
+      { label: 'Categories', path: '/admin/categories', icon: Tags, access: { permission: 'categories:manage' } },
     ],
   },
   {
     label: 'CUSTOMERS',
     items: [
-      { label: 'Customers', path: '/admin/customers', icon: Users },
-      { label: 'Payments', path: '/admin/payments', icon: CreditCard },
+      { label: 'Customers', path: '/admin/customers', icon: Users, access: { permission: 'customers:view' } },
+      { label: 'Payments', path: '/admin/payments', icon: CreditCard, access: { owner: true } },
     ],
   },
   {
     label: 'OPERATIONS',
     items: [
-      { label: 'Delivery', path: '/admin/delivery', icon: Truck },
-      { label: 'Delivery Staff', path: '/admin/delivery-staff', icon: UserRoundCheck },
-      { label: 'Notifications', path: '/admin/notifications', icon: Bell },
+      { label: 'Delivery', path: '/admin/delivery', icon: Truck, access: { permission: 'delivery:view' } },
+      { label: 'Delivery Staff', path: '/admin/delivery-staff', icon: UserRoundCheck, access: { owner: true } },
+      { label: 'Notifications', path: '/admin/notifications', icon: Bell, access: { owner: true } },
     ],
   },
   {
     label: 'BUSINESS',
     items: [
-      { label: 'Reports', path: '/admin/reports', icon: BarChart3 },
-      { label: 'Settings', path: '/admin/settings', icon: Settings },
+      { label: 'Reports', path: '/admin/reports', icon: BarChart3, access: { owner: true } },
+      { label: 'Staff & Access', path: '/admin/staff', icon: ShieldCheck, access: { owner: true } },
+      { label: 'Settings', path: '/admin/settings', icon: Settings, access: { owner: true } },
     ],
   },
 ]

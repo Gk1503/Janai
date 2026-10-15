@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import Product from '../models/Product.js';
 import VendorPriceHistory from '../models/VendorPriceHistory.js';
 import asyncHandler from '../utils/asyncHandler.js';
+import { canViewSupplierCosts, hasPermission } from '../config/permissions.js';
 
 // Whitelists and casts incoming vendor rows. A client-sent `_id` is kept only when it's
 // a real ObjectId (i.e. an already-persisted vendor) so Mongoose preserves that vendor's
@@ -24,6 +25,8 @@ function sanitizeVendors(vendors) {
   });
 }
 
+const withSupplierVisibility = (query, user) => (canViewSupplierCosts(user) ? query : query.select('-vendors'));
+
 export const listProducts = asyncHandler(async (req, res) => {
   const { category, q, sort = 'featured', preOrder, bulk, minPrice, maxPrice, rating } = req.query;
   const filter = {};
@@ -37,14 +40,15 @@ export const listProducts = asyncHandler(async (req, res) => {
   const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 24));
   const page = Math.max(1, Number(req.query.page) || 1);
   const [products, total] = await Promise.all([
-    Product.find(filter).sort(sorts[sort] || sorts.featured).skip((page - 1) * limit).limit(limit),
+    // Supplier names and purchase prices never go to the public, customers or unauthorised staff.
+    withSupplierVisibility(Product.find(filter), req.user).sort(sorts[sort] || sorts.featured).skip((page - 1) * limit).limit(limit),
     Product.countDocuments(filter),
   ]);
   res.json({ products, total, page, pages: Math.ceil(total / limit) });
 });
 
 export const getProduct = asyncHandler(async (req, res) => {
-  const product = await Product.findById(req.params.id);
+  const product = await withSupplierVisibility(Product.findById(req.params.id), req.user);
   if (!product) return res.status(404).json({ message: 'Product not found.' });
   res.json({ product });
 });
@@ -59,6 +63,12 @@ export const createProduct = asyncHandler(async (req, res) => {
 });
 
 export const updateProduct = asyncHandler(async (req, res) => {
+  // Staff holding only inventory:update may change stock and nothing else.
+  if (!hasPermission(req.user, 'products:manage')) {
+    const fields = Object.keys(req.body || {});
+    if (fields.length !== 1 || fields[0] !== 'stock') return res.status(403).json({ message: 'You may only update the stock quantity.' });
+    if (typeof req.body.stock !== 'number' || !Number.isFinite(req.body.stock) || req.body.stock < 0) return res.status(400).json({ message: 'Enter a valid stock quantity.' });
+  }
   const existing = await Product.findById(req.params.id);
   if (!existing) return res.status(404).json({ message: 'Product not found.' });
 
