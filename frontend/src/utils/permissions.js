@@ -151,10 +151,17 @@ const ORDER_ACTIONS = {
   bulk: { update: 'bulk:update', cancel: 'bulk:update' },
 }
 
+// The two forward steps a delivery:update holder may apply on their own, without the order type's
+// broader update permission: preparing -> out_for_delivery -> delivered. Mirrors the backend
+// (config/permissions.js); checked for drift in backend/test/frontend-permissions.test.js.
+export const DELIVERY_TRANSITIONS = { preparing: 'out_for_delivery', out_for_delivery: 'delivered' }
+
 export function orderActions(can, order) {
   const actions = ORDER_ACTIONS[order?.orderType || 'normal']
   if (!actions) return { canUpdate: false, canCancel: false }
-  return { canUpdate: can(actions.update), canCancel: can(actions.cancel) }
+  const deliveryStep = DELIVERY_TRANSITIONS[order?.orderStatus]
+  const canUpdate = can(actions.update) || (Boolean(deliveryStep) && can('delivery:update'))
+  return { canUpdate, canCancel: can(actions.cancel) }
 }
 
 const sameSet = (a, b) => a.length === b.length && a.every((entry) => b.includes(entry))

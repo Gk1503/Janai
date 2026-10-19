@@ -6,12 +6,21 @@ import { clearAdminLoginFailures, recordAdminLoginFailure } from '../utils/login
 
 export const register = asyncHandler(async (req, res) => {
   const { firstName, lastName, email, phone, password, confirmPassword } = req.body;
-  if (![firstName, lastName, email, phone, password].every((value) => typeof value === 'string' && value.trim())) return res.status(400).json({ message: 'Complete all required fields.' });
-  if (!/^\S+@\S+\.\S+$/.test(email)) return res.status(400).json({ message: 'Enter a valid email address.' });
+  if (![firstName, lastName, phone, password].every((value) => typeof value === 'string' && value.trim())) return res.status(400).json({ message: 'Complete all required fields.' });
   if (password.length < 8) return res.status(400).json({ message: 'Password must be at least 8 characters.' });
   if (password !== confirmPassword) return res.status(400).json({ message: 'Passwords do not match.' });
-  if (await User.exists({ email: email.toLowerCase().trim() })) return res.status(409).json({ message: 'An account with this email already exists.' });
-  const user = await User.create({ firstName, lastName, email, phone: phone.trim(), password });
+  // Email is optional for customers (mobile OTP is the primary sign-in method); when given, it is still
+  // validated and must be unique, exactly as before.
+  const trimmedEmail = typeof email === 'string' ? email.trim() : '';
+  if (trimmedEmail) {
+    if (!/^\S+@\S+\.\S+$/.test(trimmedEmail)) return res.status(400).json({ message: 'Enter a valid email address.' });
+    if (await User.exists({ email: trimmedEmail.toLowerCase() })) return res.status(409).json({ message: 'An account with this email already exists.' });
+  }
+  const payload = { firstName, lastName, phone: phone.trim(), password };
+  // Omitted entirely (not an empty string) when not provided, so the email_unique_when_present partial
+  // index never sees it and multiple email-less customers can register without a duplicate-key error.
+  if (trimmedEmail) payload.email = trimmedEmail;
+  const user = await User.create(payload);
   return sendAuth(res, user, 201);
 });
 

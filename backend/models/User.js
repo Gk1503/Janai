@@ -18,12 +18,19 @@ function isNotStaff() {
   return this.role !== 'staff';
 }
 
+// Only the owner account (the single 'admin') is required to have an email. Staff are managed by the
+// owner and never need one; customers can now register with just a mobile number, matching the
+// mobile-OTP-only sign-in flow — email stays an optional contact detail for them.
+function isOwner() {
+  return this.role === 'admin';
+}
+
 const userSchema = new mongoose.Schema({
   firstName: { type: String, required: true, trim: true, maxlength: 60 },
   // Staff accounts are managed by the owner and may have only a single name, no email and no mobile number.
   lastName: { type: String, required: isNotStaff, trim: true, maxlength: 60, default: '' },
-  // Uniqueness comes from the partial index declared below, so staff without an email never collide.
-  email: { type: String, required: isNotStaff, lowercase: true, trim: true },
+  // Uniqueness comes from the partial index declared below, so accounts without an email never collide.
+  email: { type: String, required: isOwner, lowercase: true, trim: true },
   phone: { type: String, required: isNotStaff, trim: true, index: true },
   adminId: { type: String, trim: true, lowercase: true, unique: true, sparse: true },
   password: { type: String, required: true, select: false },

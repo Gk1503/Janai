@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import User from '../models/User.js';
 import asyncHandler from '../utils/asyncHandler.js';
-import { ROLE_PRESETS, sanitizePermissions, validatePermissionSet } from '../config/permissions.js';
+import { PERMISSION_LIST, ROLE_PRESETS, sanitizePermissions, validatePermissionSet } from '../config/permissions.js';
 import {
   normalizeLoginId, normalizeOptionalEmail, normalizeOptionalMobile, splitFullName, validateTemporaryPassword,
 } from '../utils/staffValidation.js';
@@ -71,6 +71,10 @@ export const listStaff = asyncHandler(async (req, res) => {
   if (req.query.status === 'active') filter.isActive = true;
   if (req.query.status === 'inactive') filter.isActive = false;
   if (hasPreset(req.query.preset)) filter.staffRole = req.query.preset;
+  // Filters by who currently HOLDS a permission, not by the (mutable) preset label — so an account
+  // relisted as "Custom Role" after the owner grants it extra access still shows up on a scoped page
+  // such as Delivery Staff, instead of silently disappearing the moment it's customised.
+  if (typeof req.query.permission === 'string' && PERMISSION_LIST.includes(req.query.permission)) filter.permissions = req.query.permission;
   const q = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 100) : '';
   if (q) {
     const regex = new RegExp(escapeRegex(q), 'i');

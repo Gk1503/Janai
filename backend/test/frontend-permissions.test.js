@@ -2,7 +2,7 @@
 // the two permission catalogs drifting apart.
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { PERMISSION_LIST, REQUIRES, ROLE_PRESETS } from '../config/permissions.js';
+import { DELIVERY_TRANSITIONS, PERMISSION_LIST, REQUIRES, ROLE_PRESETS } from '../config/permissions.js';
 import { adminNavigation } from '../../frontend/src/components/adminNavigation.js';
 import * as ui from '../../frontend/src/utils/permissions.js';
 import { generateTemporaryPassword } from '../../frontend/src/utils/tempPassword.js';
@@ -34,6 +34,10 @@ describe('frontend/backend catalogs stay in sync', () => {
   it('the permission form offers every permission exactly once', () => {
     const offered = ui.PERMISSION_GROUPS.flatMap((group) => group.items.map((item) => item.permission));
     assert.deepEqual([...offered].sort(), [...PERMISSION_LIST].sort());
+  });
+
+  it('the delivery-stage transitions a delivery:update holder may apply are identical', () => {
+    assert.deepEqual(ui.DELIVERY_TRANSITIONS, DELIVERY_TRANSITIONS);
   });
 });
 

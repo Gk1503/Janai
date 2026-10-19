@@ -1,6 +1,8 @@
+import 'dotenv/config';
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
+import { afterEach, describe, it } from 'node:test';
 import { PERMISSION_LIST, ROLE_PRESETS, validatePermissionSet } from '../config/permissions.js';
+import { register } from '../controllers/authController.js';
 import { toStaffDTO } from '../controllers/staffController.js';
 import { requireOwner } from '../middleware/auth.js';
 import User from '../models/User.js';
@@ -100,13 +102,26 @@ describe('staff responses and schema', () => {
     assert.equal(dto.createdBy.name, 'Janai Admin');
   });
 
-  it('staff documents validate without email, phone or last name; customers still require them', () => {
+  it('staff documents validate without email, phone or last name', () => {
     const staff = new User({ firstName: 'Sam', adminId: 'sam', password: 'x', role: 'staff' });
     assert.equal(staff.validateSync(), undefined);
     assert.equal('email' in staff.toObject(), false);
-    const customer = new User({ firstName: 'C', password: 'x' });
-    const errors = customer.validateSync().errors;
-    assert.ok(errors.email && errors.phone && errors.lastName);
+  });
+
+  it('customers require phone and last name but NOT email (mobile OTP is their sign-in method)', () => {
+    const noEmail = new User({ firstName: 'C', lastName: 'U', phone: '9876543210', password: 'x' });
+    assert.equal(noEmail.validateSync(), undefined);
+    assert.equal('email' in noEmail.toObject(), false);
+    const incomplete = new User({ firstName: 'C', password: 'x' });
+    const errors = incomplete.validateSync().errors;
+    assert.ok(!errors.email, 'email must not be required for a customer');
+    assert.ok(errors.phone && errors.lastName);
+  });
+
+  it('the owner account still requires an email', () => {
+    const owner = new User({ firstName: 'Owner', lastName: 'Admin', phone: '9876543210', adminId: 'admin', password: 'x', role: 'admin' });
+    const errors = owner.validateSync().errors;
+    assert.ok(errors.email);
   });
 
   it('declares email uniqueness as a partial index (only where an email exists)', () => {
@@ -125,5 +140,96 @@ describe('staff responses and schema', () => {
     assert.deepEqual(staffRouter.stack.map((layer) => Object.keys(layer.route.methods)[0] + ' ' + layer.route.path), [
       'get /', 'post /', 'get /:id', 'patch /:id', 'patch /:id/permissions', 'patch /:id/status', 'post /:id/reset-password',
     ]);
+  });
+});
+
+// ---- customer registration: email optional (handler-level, stubbed model methods, no database) ----
+function run(handler, body) {
+  return new Promise((resolve) => {
+    const res = {
+      statusCode: 200,
+      status(code) { this.statusCode = code; return this; },
+      json(payload) { resolve({ status: this.statusCode, body: payload }); return this; },
+    };
+    handler({ body }, res, (error) => resolve({ status: 500, error }));
+  });
+}
+
+const validBody = (overrides = {}) => ({ firstName: 'A', lastName: 'B', phone: '9876543210', password: 'longenough1', confirmPassword: 'longenough1', ...overrides });
+
+describe('customer registration (email optional)', () => {
+  const originals = { exists: User.exists, create: User.create };
+  let createdPayload = null;
+
+  afterEach(() => Object.assign(User, originals));
+
+  function stub({ exists = false } = {}) {
+    createdPayload = null;
+    User.exists = async () => exists;
+    User.create = async (payload) => {
+      createdPayload = payload;
+      return { id: 'new-user-1', toSafeJSON: () => ({ _id: 'new-user-1', ...payload, password: undefined }) };
+    };
+  }
+
+  it('registers successfully with no email at all, and never stores an empty-string email', async () => {
+    stub();
+    const result = await run(register, validBody());
+    assert.equal(result.status, 201);
+    assert.ok(!('email' in createdPayload), 'email key must be omitted from the create payload, not sent as an empty string');
+    assert.equal(result.body.user.email, undefined);
+    assert.ok(result.body.token);
+  });
+
+  it('still registers successfully with a valid email, unchanged from before', async () => {
+    stub();
+    const result = await run(register, validBody({ email: ' A.User@Example.com ' }));
+    assert.equal(result.status, 201);
+    // The controller trims and passes the email through to User.create() as before; lowercasing is the
+    // schema's job (email: { lowercase: true }), which this stub bypasses, so it isn't re-asserted here.
+    assert.equal(createdPayload.email, 'A.User@Example.com');
+  });
+
+  it('rejects an invalid email format without ever touching the database', async () => {
+    stub();
+    const result = await run(register, validBody({ email: 'not-an-email' }));
+    assert.equal(result.status, 400);
+    assert.equal(createdPayload, null);
+  });
+
+  it('rejects a duplicate email with 409, but skips the uniqueness check entirely when no email is given', async () => {
+    stub({ exists: true });
+    const withEmail = await run(register, validBody({ email: 'taken@example.com' }));
+    assert.equal(withEmail.status, 409);
+    const withoutEmail = await run(register, validBody());
+    assert.equal(withoutEmail.status, 201); // User.exists stubbed to true is irrelevant with no email to check
+  });
+
+  it('still requires first name, last name, phone and password (email is the only field that became optional)', async () => {
+    stub();
+    for (const missing of ['firstName', 'lastName', 'phone', 'password']) {
+      const body = validBody();
+      delete body[missing];
+      const result = await run(register, body);
+      assert.equal(result.status, 400, `missing ${missing} should still 400`);
+    }
+    assert.equal(createdPayload, null);
+  });
+
+  it('still enforces minimum password length and matching confirmation, unchanged', async () => {
+    stub();
+    const short = await run(register, validBody({ password: 'short', confirmPassword: 'short' }));
+    assert.equal(short.status, 400);
+    const mismatch = await run(register, validBody({ confirmPassword: 'different1' }));
+    assert.equal(mismatch.status, 400);
+    assert.equal(createdPayload, null);
+  });
+
+  it('duplicate mobile numbers are not restricted by this change (pre-existing, unchanged behaviour)', async () => {
+    stub();
+    const first = await run(register, validBody({ phone: '9876500000' }));
+    const second = await run(register, validBody({ phone: '9876500000' }));
+    assert.equal(first.status, 201);
+    assert.equal(second.status, 201); // register() has never checked phone uniqueness; this test pins that down
   });
 });

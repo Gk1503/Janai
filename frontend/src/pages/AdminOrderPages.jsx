@@ -3,7 +3,7 @@ import { NavLink, useParams } from 'react-router-dom'
 import { CalendarDays, Clock, CreditCard, Eye, IndianRupee, Mail, MapPin, Phone, ReceiptText, Search, ShoppingBag, StickyNote, Truck, User } from 'lucide-react'
 import api, { getApiError } from '../services/api'
 import { useAuth, useToast } from '../context/AppContexts'
-import { orderActions } from '../utils/permissions'
+import { DELIVERY_TRANSITIONS, orderActions } from '../utils/permissions'
 import { EmptyState, formatPrice, Loader, Modal, ProductImage } from '../components/UI'
 
 const PAGE_SIZE = 10
@@ -58,17 +58,17 @@ const BULK_VIEWS = {
 }
 
 const ORDER_DATE_FILTERS = [{ value: 'all', label: 'Any order date' }, { value: 'today', label: 'Ordered today' }, { value: '7', label: 'Last 7 days' }, { value: '30', label: 'Last 30 days' }]
-const DELIVERY_DATE_FILTERS = [{ value: 'all', label: 'Any delivery date' }, { value: 'today', label: 'Delivery today' }, { value: 'tomorrow', label: 'Delivery tomorrow' }, { value: 'next7', label: 'Next 7 days' }, { value: 'past', label: 'Past deliveries' }]
+export const DELIVERY_DATE_FILTERS = [{ value: 'all', label: 'Any delivery date' }, { value: 'today', label: 'Delivery today' }, { value: 'tomorrow', label: 'Delivery tomorrow' }, { value: 'next7', label: 'Next 7 days' }, { value: 'past', label: 'Past deliveries' }]
 
-const shortId = (id) => `#${String(id).slice(-8).toUpperCase()}`
+export const shortId = (id) => `#${String(id).slice(-8).toUpperCase()}`
 const dayStart = (offset = 0) => { const date = new Date(); date.setHours(0, 0, 0, 0); date.setDate(date.getDate() + offset); return date }
-const formatDate = (value) => (value ? new Date(value).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—')
-const formatDateTime = (value) => (value ? new Date(value).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—')
-const customerName = (order) => (order.user ? `${order.user.firstName || ''} ${order.user.lastName || ''}`.trim() : '') || order.deliveryAddress?.recipient || 'Customer'
-const customerPhone = (order) => order.user?.phone || order.deliveryAddress?.phone || '—'
+export const formatDate = (value) => (value ? new Date(value).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—')
+export const formatDateTime = (value) => (value ? new Date(value).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—')
+export const customerName = (order) => (order.user ? `${order.user.firstName || ''} ${order.user.lastName || ''}`.trim() : '') || order.deliveryAddress?.recipient || 'Customer'
+export const customerPhone = (order) => order.user?.phone || order.deliveryAddress?.phone || '—'
 const itemsSubtotal = (order) => (order.items || []).reduce((sum, item) => sum + item.price * item.quantity, 0)
 
-function matchesDate(value, filter) {
+export function matchesDate(value, filter) {
   if (filter === 'all') return true
   const time = new Date(value).getTime()
   if (filter === 'today') return time >= dayStart().getTime() && time < dayStart(1).getTime()
@@ -78,7 +78,7 @@ function matchesDate(value, filter) {
   return time >= dayStart(-(Number(filter) - 1)).getTime()
 }
 
-function matchesSearch(fields, query) {
+export function matchesSearch(fields, query) {
   const needle = query.trim().toLowerCase()
   return !needle || fields.some((field) => String(field || '').toLowerCase().includes(needle))
 }
@@ -91,7 +91,7 @@ function PaymentStatusBadge({ status }) {
   return <span className={`status-pill status-payment-${status}`}>{status || 'pending'}</span>
 }
 
-function Pagination({ page, pages, onChange, label }) {
+export function Pagination({ page, pages, onChange, label }) {
   if (pages <= 1) return null
   return <nav className="adm-pagination" aria-label={label}>
     <button type="button" disabled={page === 1} onClick={() => onChange(page - 1)}>Previous</button>
@@ -107,12 +107,12 @@ function StatusTabs({ tabs, active, label }) {
   </nav>
 }
 
-function SummaryCards({ cards }) {
+export function SummaryCards({ cards }) {
   return <div className="adm-order-stats">{cards.map(({ icon: Icon, label, value }) => <article className="adm-order-stat" key={label}><span className="adm-order-stat-icon"><Icon size={18} /></span><small>{label}</small><strong>{value}</strong></article>)}</div>
 }
 
 // Search box + selects, matching the Products toolbar.
-function Toolbar({ searchInput, onSearch, placeholder, children, filtersActive, onReset }) {
+export function Toolbar({ searchInput, onSearch, placeholder, children, filtersActive, onReset }) {
   return <section className="adm-panel adm-toolbar-panel">
     <div className="adm-toolbar">
       <label className="shop-search"><Search size={16} /><input type="search" value={searchInput} onChange={(event) => onSearch(event.target.value)} placeholder={placeholder} aria-label={placeholder} /></label>
@@ -122,7 +122,7 @@ function Toolbar({ searchInput, onSearch, placeholder, children, filtersActive, 
   </section>
 }
 
-function useDebouncedSearch() {
+export function useDebouncedSearch() {
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
   const timer = useRef(null)
@@ -207,8 +207,11 @@ export function OrderDetailsModal({ order, onClose, onStatusChange, busy, readOn
   const [status, setStatus] = useState(order.orderStatus)
   const { can } = useAuth()
   const actions = orderActions(can, order)
+  // A viewer who only holds delivery:update (not the order type's broader update permission) may only
+  // apply the single next delivery-stage step — never jump ahead, back, or cancel from here.
+  const deliveryOnly = !can((order.orderType === 'preorder' ? 'preorders:update' : order.orderType === 'bulk' ? 'bulk:update' : 'orders:update_status')) && Boolean(DELIVERY_TRANSITIONS[order.orderStatus]) && can('delivery:update')
   // Only the next steps this user is allowed to apply; "Cancelled" needs the cancel permission for this order type.
-  const nextOptions = (NEXT_STATUSES[order.orderStatus] || []).filter((value) => value !== 'cancelled' || actions.canCancel)
+  const nextOptions = deliveryOnly ? [DELIVERY_TRANSITIONS[order.orderStatus]] : (NEXT_STATUSES[order.orderStatus] || []).filter((value) => value !== 'cancelled' || actions.canCancel)
   const [confirmCancel, setConfirmCancel] = useState(false)
   useEffect(() => { setStatus(order.orderStatus) }, [order.orderStatus])
   const address = order.deliveryAddress || {}
@@ -231,6 +234,7 @@ export function OrderDetailsModal({ order, onClose, onStatusChange, busy, readOn
         <DetailRow label="Delivery date">{formatDate(order.deliveryDate)}</DetailRow>
         <DetailRow label="Preferred time">{order.preferredTimeSlot || 'Any time'}</DetailRow>
         <DetailRow label="Last updated">{formatDateTime(order.updatedAt)}</DetailRow>
+        {order.assignedDeliveryStaff && <DetailRow label="Assigned to">{`${order.assignedDeliveryStaff.firstName || ''} ${order.assignedDeliveryStaff.lastName || ''}`.trim() || order.assignedDeliveryStaff.adminId}</DetailRow>}
       </dl>
     </section>
 

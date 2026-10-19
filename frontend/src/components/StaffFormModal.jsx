@@ -8,17 +8,19 @@ import TemporaryPasswordField from './TemporaryPasswordField'
 import { ROLE_PRESETS, presetKeyFor } from '../utils/permissions'
 
 // Create a staff account (staff = null) or edit an existing account's details.
-export default function StaffFormModal({ staff, onClose, onSaved }) {
+// fixedPreset locks the role to a single preset (e.g. 'delivery_staff') for a scoped creation page:
+// the preset selector is hidden and new accounts start with that preset's permissions already applied.
+export default function StaffFormModal({ staff, onClose, onSaved, fixedPreset }) {
   const isEdit = Boolean(staff)
   const [form, setForm] = useState({
     fullName: staff?.fullName || '',
     loginId: staff?.loginId || '',
     temporaryPassword: '',
-    preset: '',
+    preset: fixedPreset || '',
     email: staff?.email || '',
     phone: staff?.phone || '',
   })
-  const [permissions, setPermissions] = useState([])
+  const [permissions, setPermissions] = useState(fixedPreset ? [...ROLE_PRESETS[fixedPreset].permissions] : [])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const set = (field, value) => setForm((current) => ({ ...current, [field]: value }))
@@ -61,7 +63,7 @@ export default function StaffFormModal({ staff, onClose, onSaved }) {
         {!isEdit && <TemporaryPasswordField value={form.temporaryPassword} onChange={(value) => set('temporaryPassword', value)} />}
         <Field label="Email" optional><input type="email" value={form.email} onChange={(event) => set('email', event.target.value)} autoComplete="off" /></Field>
         <Field label="Mobile number" optional><PhoneInput value={form.phone} onChange={(value) => set('phone', value)} /></Field>
-        {!isEdit && <Field label="Role preset" required hint="A starting point; adjust the permissions below if needed.">
+        {!isEdit && !fixedPreset && <Field label="Role preset" required hint="A starting point; adjust the permissions below if needed.">
           <select value={form.preset} onChange={(event) => choosePreset(event.target.value)} required>
             <option value="">Choose a role preset…</option>
             {Object.entries(ROLE_PRESETS).map(([key, preset]) => <option key={key} value={key}>{preset.label}</option>)}
