@@ -14,16 +14,14 @@ export function AuthFrame({ eyebrow, title, description, children, footer, stand
 }
 
 export function LoginPage() {
-  const { login, loginWithOtp } = useAuth()
+  const { loginWithOtp } = useAuth()
   const toast = useToast()
   const navigate = useNavigate()
   const location = useLocation()
-  const [mode, setMode] = useState('otp')
   const [mobile, setMobile] = useState('')
   const [otp, setOtp] = useState(Array(6).fill(''))
   const [otpStep, setOtpStep] = useState(false)
   const [cooldown, setCooldown] = useState(0)
-  const [passwordForm, setPasswordForm] = useState({ email: '', password: '' })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const otpRefs = useRef([])
@@ -87,19 +85,8 @@ export function LoginPage() {
     setError('')
   }
 
-  async function passwordLogin(event) {
-    event.preventDefault()
-    setBusy(true)
-    setError('')
-    try {
-      const user = await login(passwordForm)
-      toast(`Welcome back, ${user.firstName}.`)
-      navigate(location.state?.from || '/', { replace: true })
-    } catch (requestError) { setError(getApiError(requestError)) } finally { setBusy(false) }
-  }
-
   return <AuthFrame eyebrow="FRESHNESS AT YOUR DOORSTEP" title={otpStep ? 'Verify OTP' : 'Welcome Back!'} description={otpStep ? `OTP sent to +91 ${mobile}` : 'Sign in to keep your fresh picks, orders and plans together.'} footer={<>New to Janai? <Link to="/register">Create your account <ArrowRight size={14} /></Link></>}>
-    {mode === 'otp' ? otpStep ? <form className="auth-form" onSubmit={verifyOtp}><p className="otp-instruction">Enter the 6-digit code sent to <strong>+91 {mobile}</strong>.</p><div className="otp-input-row" role="group" aria-label="6-digit one-time password">{otp.map((digit, index) => <input key={index} ref={(element) => { otpRefs.current[index] = element }} type="text" inputMode="numeric" autoComplete={index === 0 ? 'one-time-code' : 'off'} aria-label={`OTP digit ${index + 1}`} maxLength={1} value={digit} onChange={(event) => editOtp(index, event.target.value)} onKeyDown={(event) => otpKeyDown(index, event)} onPaste={(event) => { event.preventDefault(); editOtp(index, event.clipboardData.getData('text')) }} />)}</div>{error && <div className="form-error" role="alert">{error}</div>}<button className="button button-primary button-full" disabled={busy || otp.join('').length !== 6}>{busy ? 'Verifying…' : 'Verify OTP'}<ArrowRight size={16} /></button><div className="otp-actions"><button type="button" className="text-link" disabled={busy || cooldown > 0} onClick={() => sendOtp(true)}>{cooldown > 0 ? `Resend OTP in ${cooldown}s` : 'Resend OTP'}</button><button type="button" className="text-link" disabled={busy} onClick={changeMobile}>Change mobile number</button></div></form> : <form className="auth-form" onSubmit={(event) => { event.preventDefault(); sendOtp(false) }}><Field label="Mobile Number" required><PhoneInput value={mobile} onChange={(value) => { setMobile(value); setError('') }} required /></Field>{error && <div className="form-error" role="alert">{error}</div>}<button className="button button-primary button-full" disabled={busy || mobile.length !== 10}>{busy ? 'Sending OTP…' : 'Send OTP'}<ArrowRight size={16} /></button><button className="auth-switch" type="button" onClick={() => { setMode('password'); setError('') }}>Use email and password</button><p className="auth-secure"><Sprout size={14} />Only existing Janai accounts can sign in with OTP.</p></form> : <form className="auth-form" onSubmit={passwordLogin}><label className="field"><span>Email address</span><input required type="email" autoComplete="email" value={passwordForm.email} onChange={(event) => setPasswordForm({ ...passwordForm, email: event.target.value })} placeholder="you@example.com" /></label><label className="field"><span>Password</span><input required type="password" autoComplete="current-password" value={passwordForm.password} onChange={(event) => setPasswordForm({ ...passwordForm, password: event.target.value })} /></label><div className="auth-form-aside"><span /><Link to="/forgot-password">Forgot password?</Link></div>{error && <div className="form-error" role="alert">{error}</div>}<button className="button button-primary button-full" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}<ArrowRight size={16} /></button><button className="auth-switch" type="button" onClick={() => { setMode('otp'); setError('') }}>Sign in with mobile OTP</button></form>}
+    {otpStep ? <form className="auth-form" onSubmit={verifyOtp}><p className="otp-instruction">Enter the 6-digit code sent to <strong>+91 {mobile}</strong>.</p><div className="otp-input-row" role="group" aria-label="6-digit one-time password">{otp.map((digit, index) => <input key={index} ref={(element) => { otpRefs.current[index] = element }} type="text" inputMode="numeric" autoComplete={index === 0 ? 'one-time-code' : 'off'} aria-label={`OTP digit ${index + 1}`} maxLength={1} value={digit} onChange={(event) => editOtp(index, event.target.value)} onKeyDown={(event) => otpKeyDown(index, event)} onPaste={(event) => { event.preventDefault(); editOtp(index, event.clipboardData.getData('text')) }} />)}</div>{error && <div className="form-error" role="alert">{error}</div>}<button className="button button-primary button-full" disabled={busy || otp.join('').length !== 6}>{busy ? 'Verifying…' : 'Verify OTP'}<ArrowRight size={16} /></button><div className="otp-actions"><button type="button" className="text-link" disabled={busy || cooldown > 0} onClick={() => sendOtp(true)}>{cooldown > 0 ? `Resend OTP in ${cooldown}s` : 'Resend OTP'}</button><button type="button" className="text-link" disabled={busy} onClick={changeMobile}>Change mobile number</button></div></form> : <form className="auth-form" onSubmit={(event) => { event.preventDefault(); sendOtp(false) }}><Field label="Mobile Number" required><PhoneInput value={mobile} onChange={(value) => { setMobile(value); setError('') }} required /></Field>{error && <div className="form-error" role="alert">{error}</div>}<button className="button button-primary button-full" disabled={busy || mobile.length !== 10}>{busy ? 'Sending OTP…' : 'Send OTP'}<ArrowRight size={16} /></button><p className="auth-secure"><Sprout size={14} />Only existing Janai accounts can sign in with OTP.</p></form>}
   </AuthFrame>
 }
 
@@ -107,7 +94,7 @@ export function RegisterPage() {
   const { register } = useAuth()
   const toast = useToast()
   const navigate = useNavigate()
-  const [form, setForm] = useState({ firstName: '', lastName: '', email: '', phone: '', password: '', confirmPassword: '' })
+  const [form, setForm] = useState({ firstName: '', lastName: '', phone: '', password: '', confirmPassword: '' })
   const [errors, setErrors] = useState({})
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -117,7 +104,6 @@ export function RegisterPage() {
     const nextErrors = {
       firstName: validateName(form.firstName, 'first name'),
       lastName: validateName(form.lastName, 'last name'),
-      email: validateEmail(form.email),
       phone: validateMobile(form.phone),
       password: form.password.length < 8 ? 'Use at least 8 characters for your password.' : '',
       confirmPassword: form.password !== form.confirmPassword ? 'Passwords do not match.' : '',
@@ -128,7 +114,7 @@ export function RegisterPage() {
     setError('')
     try { const user = await register(form); toast(`Welcome to Janai, ${user.firstName}.`); navigate('/', { replace: true }) } catch (requestError) { setError(getApiError(requestError)) } finally { setBusy(false) }
   }
-  return <AuthFrame eyebrow="A FRESH START" title="Create your account" description="A few details and your next grocery run gets easier." footer={<>Already have an account? <Link to="/login">Sign in<ArrowRight size={14} /></Link></>}><form className="auth-form" onSubmit={submit} noValidate><div className="form-grid"><Field label="First name" required error={errors.firstName}><input autoComplete="given-name" value={form.firstName} onChange={(event) => set('firstName', event.target.value)} /></Field><Field label="Last name" required error={errors.lastName}><input autoComplete="family-name" value={form.lastName} onChange={(event) => set('lastName', event.target.value)} /></Field><Field label="Email" required wide error={errors.email}><input type="email" inputMode="email" autoComplete="email" value={form.email} onChange={(event) => set('email', event.target.value.trim())} placeholder="you@example.com" /></Field><Field label="Mobile Number" required wide error={errors.phone} hint="Used for OTP sign-in."><PhoneInput value={form.phone} onChange={(value) => set('phone', value)} invalid={Boolean(errors.phone)} /></Field><Field label="Password" required error={errors.password} hint="At least 8 characters."><input type="password" autoComplete="new-password" value={form.password} onChange={(event) => set('password', event.target.value)} /></Field><Field label="Confirm password" required error={errors.confirmPassword}><input type="password" autoComplete="new-password" value={form.confirmPassword} onChange={(event) => set('confirmPassword', event.target.value)} /></Field></div>{error && <div className="form-error" role="alert">{error}</div>}<button className="button button-primary button-full" disabled={busy}>{busy ? 'Creating account…' : 'Create account'}<ArrowRight size={16} /></button><p className="auth-secure"><Check size={14} />Passwords are securely hashed.</p></form></AuthFrame>
+  return <AuthFrame eyebrow="A FRESH START" title="Create your account" description="A few details and your next grocery run gets easier." footer={<>Already have an account? <Link to="/login">Sign in<ArrowRight size={14} /></Link></>}><form className="auth-form" onSubmit={submit} noValidate><div className="form-grid"><Field label="First name" required error={errors.firstName}><input autoComplete="given-name" value={form.firstName} onChange={(event) => set('firstName', event.target.value)} /></Field><Field label="Last name" required error={errors.lastName}><input autoComplete="family-name" value={form.lastName} onChange={(event) => set('lastName', event.target.value)} /></Field><Field label="Mobile Number" required wide error={errors.phone} hint="Used for OTP sign-in."><PhoneInput value={form.phone} onChange={(value) => set('phone', value)} invalid={Boolean(errors.phone)} /></Field><Field label="Password" required error={errors.password} hint="At least 8 characters."><input type="password" autoComplete="new-password" value={form.password} onChange={(event) => set('password', event.target.value)} /></Field><Field label="Confirm password" required error={errors.confirmPassword}><input type="password" autoComplete="new-password" value={form.confirmPassword} onChange={(event) => set('confirmPassword', event.target.value)} /></Field></div>{error && <div className="form-error" role="alert">{error}</div>}<button className="button button-primary button-full" disabled={busy}>{busy ? 'Creating account…' : 'Create account'}<ArrowRight size={16} /></button><p className="auth-secure"><Check size={14} />Passwords are securely hashed.</p></form></AuthFrame>
 }
 
 export function ForgotPasswordPage() {

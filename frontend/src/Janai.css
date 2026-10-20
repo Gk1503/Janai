@@ -1041,8 +1041,11 @@ h3 { font-size: 16px; }
   .adm-responsive-table .adm-cell-stack, .adm-responsive-table .adm-product-lines { justify-items: end; min-width: 0; }
   .adm-responsive-table .adm-cell-wrap { min-width: 0; max-width: 62%; }
   .adm-responsive-table .adm-col-actions::before { display: none; }
-  .adm-responsive-table .adm-col-actions .adm-row-actions { width: 100%; }
-  .adm-responsive-table .adm-col-actions .table-action { flex: 1; justify-content: center; min-height: 40px; font-size: 13px; }
+  /* A row with more actions than fit on one line (e.g. 4 staff actions) wraps onto a second line
+     instead of forcing the whole page wider than the viewport; min-width: 0 lets each button actually
+     shrink to the wrapped layout instead of being held to its unwrapped text width. */
+  .adm-responsive-table .adm-col-actions .adm-row-actions { width: 100%; max-width: 100%; flex-wrap: wrap; }
+  .adm-responsive-table .adm-col-actions .table-action { flex: 1 1 calc(50% - 3px); min-width: 0; max-width: 100%; justify-content: center; min-height: 40px; font-size: 13px; }
   .adm-orders-page .admin-table-wrap, .adm-customers-page .admin-table-wrap { overflow: visible; }
   .adm-count-chip { align-self: flex-start; }
   .adm-detail-grid, .adm-detail-columns { grid-template-columns: 1fr; }

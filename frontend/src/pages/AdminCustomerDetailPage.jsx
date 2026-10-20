@@ -79,7 +79,7 @@ export default function AdminCustomerDetailPage() {
       <section className="adm-panel">
         <h2 className="adm-modal-section-title">Customer profile</h2>
         <div className="adm-profile-grid">
-          <ProfileItem icon={Mail} label="Email"><a href={`mailto:${customer.email}`} className="adm-inline-link">{customer.email}</a></ProfileItem>
+          <ProfileItem icon={Mail} label="Email">{customer.email ? <a href={`mailto:${customer.email}`} className="adm-inline-link">{customer.email}</a> : <span className="adm-muted">Not provided</span>}</ProfileItem>
           <ProfileItem icon={Phone} label="Phone"><a href={`tel:${customer.phone}`} className="adm-inline-link">{customer.phone || '—'}</a></ProfileItem>
           <ProfileItem icon={Hash} label="Customer ID" title={customer._id}>{customer._id}</ProfileItem>
           <ProfileItem icon={CalendarDays} label="Registered on">{formatDate(customer.createdAt)}</ProfileItem>

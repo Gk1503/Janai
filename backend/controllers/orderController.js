@@ -2,7 +2,7 @@ import Cart from '../models/Cart.js';
 import Order from '../models/Order.js';
 import Product from '../models/Product.js';
 import asyncHandler from '../utils/asyncHandler.js';
-import { ORDER_TYPE_PERMISSIONS, hasPermission, orderTypeCondition, viewableOrderTypes } from '../config/permissions.js';
+import { DELIVERY_TRANSITIONS, ORDER_TYPE_PERMISSIONS, hasPermission, orderTypeCondition, viewableOrderTypes } from '../config/permissions.js';
 import { maskOrder } from '../utils/privacy.js';
 import { buildStatusEntry, statusUpdateWithAudit, withPresentedHistory, withoutStatusHistory } from '../utils/statusAudit.js';
 
@@ -82,7 +82,7 @@ export const listAdminOrders = asyncHandler(async (req, res) => {
   const filter = {};
   if (requested || req.user.role !== 'admin') filter.orderType = orderTypeCondition(requested ? [requested] : allowed);
   // History is requested explicitly; order types the viewer cannot see were already excluded by the filter.
-  const orders = await Order.find(filter).select('+statusHistory').populate('user', 'firstName lastName email phone').sort({ createdAt: -1 });
+  const orders = await Order.find(filter).select('+statusHistory').populate('user', 'firstName lastName email phone').populate('assignedDeliveryStaff', 'firstName lastName adminId').sort({ createdAt: -1 });
   res.json({ orders: orders.map((order) => withPresentedHistory(maskOrder(order, req.user), req.user, true)) });
 });
 
@@ -123,8 +123,11 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
   const current = await Order.findById(req.params.id);
   if (!current) return res.status(404).json({ message: 'Order not found.' });
   // Each order type is governed by its own permissions; cancelling a normal order needs orders:cancel.
+  // A delivery:update holder may additionally apply the two delivery-stage steps on their own
+  // (preparing -> out_for_delivery -> delivered) without the order type's broader update permission.
   const access = ORDER_TYPE_PERMISSIONS[current.orderType || 'normal'];
-  if (!access || !hasPermission(req.user, access.update) || (orderStatus === 'cancelled' && !hasPermission(req.user, access.cancel))) return res.status(403).json({ message: 'You do not have permission to change this order.' });
+  const isDeliveryStep = DELIVERY_TRANSITIONS[current.orderStatus] === orderStatus && hasPermission(req.user, 'delivery:update');
+  if (!access || !(hasPermission(req.user, access.update) || isDeliveryStep) || (orderStatus === 'cancelled' && !hasPermission(req.user, access.cancel))) return res.status(403).json({ message: 'You do not have permission to change this order.' });
   if (!nextStatuses[current.orderStatus].includes(orderStatus)) return res.status(409).json({ message: `An order that is ${current.orderStatus.replaceAll('_', ' ')} cannot be changed to ${orderStatus.replaceAll('_', ' ')}.` });
   // Conditional on the status we validated against, so two admins can't both apply a transition.
   // The status change and its audit entry are one atomic document update.

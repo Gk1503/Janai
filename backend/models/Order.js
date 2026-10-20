@@ -33,6 +33,10 @@ const orderSchema = new mongoose.Schema({
 	paymentMethod: { type: String, enum: ['cod', 'online'], default: 'cod' },
 	paymentStatus: { type: String, enum: ['pending', 'paid', 'failed'], default: 'pending' },
 	orderStatus: { type: String, enum: ['placed', 'confirmed', 'preparing', 'out_for_delivery', 'delivered', 'cancelled'], default: 'placed', index: true },
+	// Who is currently assigned to deliver this order, and when. Assignment is independent of orderStatus —
+	// setting it never changes the status, and it is never set automatically by a status change either.
+	assignedDeliveryStaff: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+	assignedAt: { type: Date, default: null },
 	// Append-only audit trail of status changes; excluded from queries unless explicitly selected.
 	statusHistory: statusHistoryField,
 }, { timestamps: true });

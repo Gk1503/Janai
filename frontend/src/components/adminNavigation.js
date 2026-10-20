@@ -33,7 +33,7 @@ export const adminNavigation = [
     ],
   },
   {
-    label: 'OPERATIONS',
+    label: 'DELIVERYS',
     items: [
       { label: 'Delivery', path: '/admin/delivery', icon: Truck, access: { permission: 'delivery:view' } },
       { label: 'Delivery Staff', path: '/admin/delivery-staff', icon: UserRoundCheck, access: { owner: true } },

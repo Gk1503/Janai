@@ -8,6 +8,8 @@ import ScrollToTop from './components/ScrollToTop'
 import { AuthProvider, CartProvider, ToastProvider } from './context/AppContexts'
 import AdminHomePage from './pages/AdminHomePage'
 import AdminStaffPage from './pages/AdminStaffPage'
+import AdminDeliveryStaffPage from './pages/AdminDeliveryStaffPage'
+import AdminDeliveryManagementPage from './pages/AdminDeliveryManagementPage'
 import AdminCategoriesPage from './pages/AdminCategoriesPage'
 import AdminCustomerDetailPage from './pages/AdminCustomerDetailPage'
 import AdminCustomersPage from './pages/AdminCustomersPage'
@@ -74,9 +76,10 @@ export default function App() {
         </Route>
         <Route element={<RequirePermission ownerOnly />}>
           <Route path="admin/staff" element={<AdminStaffPage />} />
+          <Route path="admin/delivery-staff" element={<AdminDeliveryStaffPage />} />
         </Route>
         <Route element={<RequirePermission any={['delivery:view']} />}>
-          <Route path="admin/delivery" element={<AdminComingSoon />} />
+          <Route path="admin/delivery" element={<AdminDeliveryManagementPage />} />
         </Route>
         {/* Everything else under /admin is a placeholder and owner-only. */}
         <Route element={<RequirePermission ownerOnly />}>

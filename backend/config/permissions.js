@@ -17,7 +17,6 @@ export const PERMISSIONS = {
   CUSTOMERS_VIEW: 'customers:view',
   CUSTOMERS_VIEW_CONTACT: 'customers:view_contact',
   CONTACT_VIEW: 'contact:view',
-  // Reserved for the future Delivery section; no route uses these yet.
   DELIVERY_VIEW: 'delivery:view',
   DELIVERY_UPDATE: 'delivery:update',
 };
@@ -51,6 +50,16 @@ export const ORDER_TYPE_PERMISSIONS = {
   preorder: { view: 'preorders:view', update: 'preorders:update', cancel: 'preorders:update' },
   bulk: { view: 'bulk:view', update: 'bulk:update', cancel: 'bulk:update' },
 };
+
+// Order.orderStatus values the Delivery Management page considers "eligible" — the order has reached
+// (or finished) the delivery stage of the existing placed -> confirmed -> preparing -> out_for_delivery ->
+// delivered workflow. "Ready" in the Delivery UI means orderStatus 'preparing'; no new status is added.
+export const DELIVERY_ELIGIBLE_STATUSES = ['preparing', 'out_for_delivery', 'delivered'];
+
+// The two forward steps a delivery:update holder may apply even without the order type's broader update
+// permission (orders:update_status / preorders:update) — nothing else: not confirm/prepare, not cancel.
+// Mirrored in frontend/src/utils/permissions.js and checked for drift in test/frontend-permissions.test.js.
+export const DELIVERY_TRANSITIONS = { preparing: 'out_for_delivery', out_for_delivery: 'delivered' };
 
 export function sanitizePermissions(list) {
   if (!Array.isArray(list)) return [];
