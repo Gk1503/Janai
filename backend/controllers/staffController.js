@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import User from '../models/User.js';
 import asyncHandler from '../utils/asyncHandler.js';
-import { PERMISSION_LIST, ROLE_PRESETS, sanitizePermissions, validatePermissionSet } from '../config/permissions.js';
+import { PERMISSIONS, PERMISSION_LIST, ROLE_PRESETS, sanitizePermissions, validatePermissionSet } from '../config/permissions.js';
 import {
   normalizeLoginId, normalizeOptionalEmail, normalizeOptionalMobile, splitFullName, validateTemporaryPassword,
 } from '../utils/staffValidation.js';
@@ -66,6 +66,34 @@ async function saveOrConflict(res, user) {
 
 const badRequest = (res, message) => res.status(400).json({ message });
 
+// A staff account that holds delivery:view is identified at delivery-OTP login time purely by its
+// registered mobile number (otpController.js), so that number must be present and must not already
+// belong to another delivery-eligible staff account — including a deactivated one, which could
+// otherwise keep "owning" a number a new account needs. This is enforced here in the controller rather
+// than with a database-level unique index on User.phone: a global unique index would also apply to
+// every customer record and could break existing data, whereas this check only ever queries staff
+// accounts that actually hold delivery:view.
+async function deliveryPhoneConflict(phone, excludeId) {
+  const filter = { role: 'staff', phone, permissions: PERMISSIONS.DELIVERY_VIEW };
+  if (excludeId) filter._id = { $ne: excludeId };
+  return User.exists(filter);
+}
+
+// Returns true when the (phone, permissions) combination is fine to save; otherwise it has already
+// written the error response and the caller must return without doing anything else.
+async function assertDeliveryPhoneOk(res, { phone, permissions, excludeId }) {
+  if (!permissions.includes(PERMISSIONS.DELIVERY_VIEW)) return true;
+  if (!phone) {
+    badRequest(res, 'Delivery staff need a registered mobile number. Add one before granting delivery access.');
+    return false;
+  }
+  if (await deliveryPhoneConflict(phone, excludeId)) {
+    res.status(409).json({ message: 'That mobile number is already registered to another delivery staff account.' });
+    return false;
+  }
+  return true;
+}
+
 export const listStaff = asyncHandler(async (req, res) => {
   const filter = { role: 'staff' };
   if (req.query.status === 'active') filter.isActive = true;
@@ -112,6 +140,7 @@ export const createStaff = asyncHandler(async (req, res) => {
   const chosen = permissions === undefined ? ROLE_PRESETS[preset].permissions : permissions;
   const validated = validatePermissionSet(chosen);
   if (!validated.ok) return badRequest(res, validated.error);
+  if (!(await assertDeliveryPhoneOk(res, { phone: phoneResult.value, permissions: validated.permissions }))) return undefined;
 
   if (await User.exists({ adminId: login.value })) return res.status(409).json({ message: 'That login ID is already in use.' });
   if (emailResult.value && await User.exists({ email: emailResult.value })) return res.status(409).json({ message: 'That email address is already in use.' });
@@ -164,6 +193,10 @@ export const updateStaff = asyncHandler(async (req, res) => {
     const result = normalizeOptionalMobile(phone);
     if (result.error) return badRequest(res, result.error);
     user.phone = result.value;
+    // Re-checked only when phone is actually part of this request, against the account's current
+    // (unchanged by this endpoint) permissions — so editing unrelated fields on an existing delivery
+    // staff account never trips this, only an actual attempt to set or clear its phone number does.
+    if (!(await assertDeliveryPhoneOk(res, { phone: user.phone, permissions: sanitizePermissions(user.permissions), excludeId: user._id }))) return undefined;
   }
   if (preset !== undefined) {
     if (!hasPreset(preset)) return badRequest(res, 'Choose a valid role preset.');
@@ -182,6 +215,7 @@ export const updateStaffPermissions = asyncHandler(async (req, res) => {
   if (req.body.preset !== undefined && !hasPreset(req.body.preset)) return badRequest(res, 'Choose a valid role preset.');
   const user = await findStaff(req.params.id);
   if (!user) return res.status(404).json({ message: 'Staff account not found.' });
+  if (!(await assertDeliveryPhoneOk(res, { phone: user.phone, permissions: validated.permissions, excludeId: user._id }))) return undefined;
   user.permissions = validated.permissions;
   if (req.body.preset !== undefined) user.staffRole = req.body.preset;
   await user.save();
