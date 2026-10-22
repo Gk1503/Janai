@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { CalendarDays, CheckCircle2, Clock, MapPin, Navigation, Phone, ShieldCheck, Truck, Wallet } from 'lucide-react'
 import api, { getApiError } from '../services/api'
 import { useAuth, useToast } from '../context/AppContexts'
 import { EmptyState, Loader, Modal, formatPrice } from '../components/UI'
-import { DELIVERY_TRANSITIONS } from '../utils/permissions'
+import { adminNavigation } from '../components/adminNavigation'
+import { DELIVERY_TRANSITIONS, PERMISSION_GROUPS, PERMISSION_LIST } from '../utils/permissions'
 import { OrderStatusBadge, SummaryCards, customerName, customerPhone, formatDate, shortId } from './AdminOrderPages'
 
 const PAYMENT_METHODS = { cod: 'Cash on Delivery', online: 'Online payment' }
@@ -15,40 +17,91 @@ const TABS = [
   { key: 'delivered', label: 'Delivered' },
 ]
 
-// Readable labels + plain-language explanations for the two permissions this portal actually uses.
-// Deliberately not the generic admin-panel wording ("View deliveries" / "Update deliveries" in
-// utils/permissions.js's PERMISSION_GROUPS) — these are addressed to the rider, not the owner
-// configuring access.
-const DELIVERY_PERMISSION_LABELS = [
-  { permission: 'delivery:view', label: 'View Assigned Deliveries', description: 'Lets you see the orders currently assigned to you — customer name and phone, delivery address, schedule and payment details.' },
-  { permission: 'delivery:update', label: 'Update Delivery Status', description: 'Lets you move your assigned orders forward: starting delivery (Ready → Out for Delivery) and marking an order as Delivered.' },
-]
+// Rider-specific wording for the two permissions this portal's own actions already use — richer and
+// more concrete than the generic admin-panel catalog entry for the same permission
+// (utils/permissions.js's PERMISSION_GROUPS), which is written for the owner configuring access, not
+// the rider reading about their own access.
+const DELIVERY_OVERRIDES = {
+  'delivery:view': { label: 'View Assigned Deliveries', description: 'Lets you see the orders currently assigned to you — customer name and phone, delivery address, schedule and payment details.' },
+  'delivery:update': { label: 'Update Delivery Status', description: 'Lets you move your assigned orders forward: starting delivery (Ready → Out for Delivery) and marking an order as Delivered.' },
+}
+
+// Flat permission -> {label, description, groupLabel} lookup built from the shared catalog
+// (utils/permissions.js's PERMISSION_GROUPS), so this page never keeps its own permission list — any
+// permission added to the catalog later is picked up here automatically. A permission somehow missing
+// from the catalog still gets a safe fallback (see MyPermissions), never silently dropped.
+const PERMISSION_DETAILS = Object.fromEntries(
+  PERMISSION_GROUPS.flatMap((group) => group.items.map((item) => [
+    item.permission,
+    { groupLabel: group.label, label: item.label, description: item.description, ...(DELIVERY_OVERRIDES[item.permission] || {}) },
+  ])),
+)
+
+// Already on the one dedicated page for these two — offering a second link to /admin/delivery (the
+// desktop admin-panel delivery listing) would just be a confusing, redundant detour out of this portal.
+const SKIP_NAV_FOR = new Set(['delivery:view', 'delivery:update'])
+
+// Reuses the exact same permission -> route map the admin sidebar itself is built from
+// (components/adminNavigation.js), so a permission only ever offers a link to a module that genuinely
+// exists and is independently gated by that same permission, both by App.jsx's RequirePermission and by
+// the backend route behind it. Matches by group (not just the exact permission clicked) so, for
+// example, clicking "Cancel orders" still offers "Open All Orders", not nothing, since cancelling an
+// order happens on that same page as viewing it.
+function navTargetFor(permission) {
+  if (SKIP_NAV_FOR.has(permission)) return null
+  const group = PERMISSION_GROUPS.find((entry) => entry.items.some((item) => item.permission === permission));
+  const groupPermissions = new Set((group?.items || [{ permission }]).map((item) => item.permission))
+  for (const navGroup of adminNavigation) {
+    for (const navItem of navGroup.items) {
+      const accessPermissions = navItem.access?.permission ? [navItem.access.permission] : (navItem.access?.any || [])
+      if (accessPermissions.some((permissionCode) => groupPermissions.has(permissionCode))) return navItem
+    }
+  }
+  return null
+}
 
 export function PermissionDetailModal({ item, onClose }) {
+  const target = navTargetFor(item.permission)
   return <Modal title={item.label} onClose={onClose}>
     <p className="adm-modal-text">{item.description}</p>
     <p className="rider-permission-code">Permission code: <code>{item.permission}</code></p>
     <div className="adm-modal-foot">
       <button type="button" className="button button-outline" onClick={onClose}>Close</button>
+      {target && <Link className="button button-primary" to={target.path} onClick={onClose}>Open {target.label}</Link>}
     </div>
   </Modal>
 }
 
-// Reads straight from the authenticated session's own permissions (via `can`, already backed by
-// user.permissions from /auth/me or the OTP-verify response) — never hardcoded, and a permission the
-// account does not hold is simply left out, never shown as granted or as a disabled placeholder.
-// Each pill is a real <button> (not a clickable <div>) so it's focusable and Enter/Space-activatable
-// without extra handlers; the detail view reuses the shared Modal component, which already closes on
-// Escape and on a click outside it (components/UI.jsx), matching the rest of the app.
+// Reads straight from the authenticated session's own effective permissions (via `can`, already backed
+// by user.permissions from /auth/me or the OTP-verify response) — every entry in the full catalog
+// (PERMISSION_LIST) is checked, so this reflects exactly what the account holds, never a hardcoded
+// subset, and a permission the account does not hold is simply left out, never shown as granted or as a
+// disabled placeholder. Each pill is a real <button> (not a clickable <div>) so it's focusable and
+// Enter/Space-activatable without extra handlers; the detail view reuses the shared Modal component,
+// which already closes on Escape and on a click outside it (components/UI.jsx), matching the rest of
+// the app.
 export function MyPermissions({ can }) {
   const [active, setActive] = useState(null)
-  const granted = DELIVERY_PERMISSION_LABELS.filter((item) => can(item.permission))
-  if (!granted.length) return null
+  const grantedPermissions = PERMISSION_LIST.filter((permission) => can(permission))
+  if (!grantedPermissions.length) return null
+
+  const groups = []
+  for (const permission of grantedPermissions) {
+    const details = PERMISSION_DETAILS[permission] || { groupLabel: 'Other', label: permission, description: 'No description is available for this permission yet.' }
+    const item = { permission, label: details.label, description: details.description }
+    let group = groups.find((entry) => entry.label === details.groupLabel)
+    if (!group) { group = { label: details.groupLabel, items: [] }; groups.push(group) }
+    group.items.push(item)
+  }
+
   return <section className="rider-permissions" aria-label="My permissions">
     <h2>My Permissions</h2>
-    <div className="rider-permission-list">
-      {granted.map((item) => <button type="button" key={item.permission} className="rider-permission-pill" onClick={() => setActive(item)}><ShieldCheck size={14} />{item.label}</button>)}
-    </div>
+    {groups.map((group) => <div className="rider-permission-group" key={group.label}>
+      <h3>{group.label}</h3>
+      <div className="rider-permission-list">
+        {group.items.map((item) => <button type="button" key={item.permission} className="rider-permission-pill" onClick={() => setActive(item)}><ShieldCheck size={14} />{item.label}</button>)}
+      </div>
+    </div>)}
     {active && <PermissionDetailModal item={active} onClose={() => setActive(null)} />}
   </section>
 }

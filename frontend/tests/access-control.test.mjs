@@ -2,7 +2,7 @@
 // components and react-dom/server renders them. The auth context is replaced by a stub that serves a chosen user,
 // built with the same permission helpers the app uses. Run with: npm test
 import assert from 'node:assert/strict';
-import { after, before, describe, it } from 'node:test';
+import { after, afterEach, before, describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
 
@@ -61,7 +61,26 @@ before(async () => {
     PermissionDetailModal: (await server.ssrLoadModule('/src/pages/DeliveryDashboardPage.jsx')).PermissionDetailModal,
     isDeliveryStaff: (await server.ssrLoadModule('/src/utils/permissions.js')).isDeliveryStaff,
     homeRedirectFor: (await server.ssrLoadModule('/src/utils/permissions.js')).homeRedirectFor,
+    PERMISSION_LIST: (await server.ssrLoadModule('/src/utils/permissions.js')).PERMISSION_LIST,
     Layout: (await server.ssrLoadModule('/src/components/Layout.jsx')).default,
+    Logo: (await server.ssrLoadModule('/src/components/Layout.jsx')).Logo,
+    ContactPage: (await server.ssrLoadModule('/src/pages/AccountPages.jsx')).ContactPage,
+    api: (await server.ssrLoadModule('/src/services/api.js')).default,
+    loadBusinessSettings: (await server.ssrLoadModule('/src/hooks/useBusinessSettings.js')).loadBusinessSettings,
+    resetBusinessSettingsCache: (await server.ssrLoadModule('/src/hooks/useBusinessSettings.js')).__resetBusinessSettingsCacheForTests,
+    BUSINESS_SETTINGS_DEFAULTS: (await server.ssrLoadModule('/src/hooks/useBusinessSettings.js')).DEFAULTS,
+    AdminSettingsPage: (await server.ssrLoadModule('/src/pages/AdminSettingsPage.jsx')).default,
+    AdminAccountPage: (await server.ssrLoadModule('/src/pages/AdminAccountPage.jsx')).default,
+    DeliverySettingsPage: (await server.ssrLoadModule('/src/pages/DeliverySettingsPage.jsx')).default,
+    AdminTopbar: (await server.ssrLoadModule('/src/components/AdminTopbar.jsx')).default,
+    GeneralSettingsForm: (await server.ssrLoadModule('/src/components/GeneralSettingsForm.jsx')).default,
+    validateGeneralSettingsForm: (await server.ssrLoadModule('/src/components/GeneralSettingsForm.jsx')).validateGeneralSettingsForm,
+    OrderDeliverySettingsForm: (await server.ssrLoadModule('/src/components/OrderDeliverySettingsForm.jsx')).default,
+    validateOrderDeliverySettingsForm: (await server.ssrLoadModule('/src/components/OrderDeliverySettingsForm.jsx')).validateOrderDeliverySettingsForm,
+    deliveryFeeFor: (await server.ssrLoadModule('/src/components/UI.jsx')).deliveryFeeFor,
+    loadOrderSettings: (await server.ssrLoadModule('/src/hooks/useOrderSettings.js')).loadOrderSettings,
+    resetOrderSettingsCache: (await server.ssrLoadModule('/src/hooks/useOrderSettings.js')).__resetOrderSettingsCacheForTests,
+    ORDER_SETTINGS_DEFAULTS: (await server.ssrLoadModule('/src/hooks/useOrderSettings.js')).DEFAULTS,
   };
 });
 
@@ -297,13 +316,38 @@ describe('DeliveryDashboardPage', () => {
     assert.ok(!html.includes('Update Delivery Status'));
   });
 
-  it('other, unrelated permissions the account happens to hold do not get fabricated delivery labels', () => {
-    const html = render(h(mods.DeliveryDashboardPage), staff(['delivery:view', 'delivery:update', 'orders:view', 'products:manage']));
-    assert.match(html, /View Assigned Deliveries/);
-    assert.match(html, /Update Delivery Status/);
-    // Only the two delivery permissions are ever rendered by this section, regardless of what else the account holds.
-    const permSection = html.slice(html.indexOf('My Permissions'));
-    assert.ok(!permSection.includes('orders:view') && !permSection.includes('products:manage'));
+  it('a staff member holding all 10 catalog permissions sees all 10 reflected, grouped by module, not just the two delivery ones', () => {
+    const html = render(h(mods.DeliveryDashboardPage), staff([...mods.PERMISSION_LIST]));
+    const expectedLabels = [
+      'View orders', 'Update order status', 'Cancel orders',
+      'View pre-orders', 'Update or cancel pre-orders',
+      'View bulk requests', 'Review and update bulk requests',
+      'View products and supplier costs', 'Add, edit and delete products',
+      'Update stock quantities and purchases',
+      'Manage categories',
+      'View customers',
+      'See full customer email and phone',
+      'View contact messages',
+      'View Assigned Deliveries', 'Update Delivery Status', // delivery gets the rider-specific wording
+    ];
+    for (const label of expectedLabels) assert.match(html, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), label);
+    for (const group of ['Orders', 'Pre Orders', 'Bulk Orders', 'Products', 'Inventory', 'Categories', 'Customers', 'Customer Contact Details', 'Contact Messages', 'Delivery']) {
+      assert.match(html, new RegExp(group), group);
+    }
+  });
+
+  it('a user with only delivery permissions sees only Delivery in the My Permissions section', () => {
+    const html = render(h(mods.DeliveryDashboardPage), staff(['delivery:view', 'delivery:update']));
+    for (const group of ['>Orders<', '>Pre Orders<', '>Bulk Orders<', '>Products<', '>Inventory<', '>Categories<', '>Customers<', '>Contact Messages<']) {
+      assert.ok(!html.includes(group), `${group} must not appear for a delivery-only account`);
+    }
+  });
+
+  it('a permission the account was never granted never appears, no matter how many others it holds', () => {
+    const html = render(h(mods.DeliveryDashboardPage), staff(['delivery:view', 'delivery:update', 'orders:view']));
+    assert.ok(!html.includes('Manage categories'));
+    assert.ok(!html.includes('View customers'));
+    assert.ok(!html.includes('View contact messages'));
   });
 });
 
@@ -330,10 +374,11 @@ describe('MyPermissions (direct)', () => {
   it('each pill is a real, keyboard-accessible <button> with an onClick wired — never a clickable <div> or <span>', () => {
     const html = render(h(mods.MyPermissions, { can: () => true }), null);
     const pills = [...html.matchAll(/<(button|span|div)[^>]*class="rider-permission-pill"[^>]*>/g)];
-    assert.equal(pills.length, 2);
+    assert.equal(pills.length, mods.PERMISSION_LIST.length, 'one pill per catalog permission when everything is granted');
     assert.ok(pills.every((match) => match[1] === 'button'), 'every pill must be a <button>, not a <div>/<span>');
     assert.ok(pills.every((match) => match[0].includes('type="button"')));
   });
+
 });
 
 describe('PermissionDetailModal (the popup a pill click opens)', () => {
@@ -363,6 +408,36 @@ describe('PermissionDetailModal (the popup a pill click opens)', () => {
     const uiSource = readFileSync(new URL('../src/components/UI.jsx', import.meta.url), 'utf8');
     assert.match(uiSource, /key === 'Escape'/, 'Modal must still close on Escape');
     assert.match(uiSource, /adm-modal-overlay[\s\S]*?onClick=\{onClose\}/, 'Modal must still close on an outside click');
+  });
+
+  it('offers a real link to the already-implemented module for a non-delivery permission (orders:view -> /admin/orders)', () => {
+    const html = render(h(mods.PermissionDetailModal, { item: { permission: 'orders:view', label: 'View orders', description: 'x' }, onClose() {} }), null);
+    assert.match(html, /href="\/admin\/orders"/);
+    assert.match(html, /Open All Orders/);
+  });
+
+  it('a permission that only has a prerequisite link still opens the right module (orders:cancel requires orders:view, both land on /admin/orders)', () => {
+    const html = render(h(mods.PermissionDetailModal, { item: { permission: 'orders:cancel', label: 'Cancel orders', description: 'x' }, onClose() {} }), null);
+    assert.match(html, /href="\/admin\/orders"/);
+  });
+
+  it('categories:manage links to the real Categories page', () => {
+    const html = render(h(mods.PermissionDetailModal, { item: { permission: 'categories:manage', label: 'Manage categories', description: 'x' }, onClose() {} }), null);
+    assert.match(html, /href="\/admin\/categories"/);
+  });
+
+  it('never invents a link for a permission with no implemented admin page (contact:view and customers:view_contact)', () => {
+    for (const permission of ['contact:view', 'customers:view_contact']) {
+      const html = render(h(mods.PermissionDetailModal, { item: { permission, label: 'x', description: 'x' }, onClose() {} }), null);
+      assert.ok(!html.includes('<a '), `${permission} must not render a navigation link — no module exists for it yet`);
+    }
+  });
+
+  it('never offers a second link for the two delivery permissions — the rider is already on their one dedicated page', () => {
+    for (const item of [viewItem, updateItem]) {
+      const html = render(h(mods.PermissionDetailModal, { item, onClose() {} }), null);
+      assert.ok(!html.includes('<a '), `${item.permission} must not offer a redundant link to /admin/delivery`);
+    }
   });
 });
 
@@ -424,6 +499,272 @@ describe('ConfirmDeliveredModal', () => {
   });
 });
 
+describe('Settings routing (App.jsx structural checks)', () => {
+  it('admin/settings sits behind the owner-only RequirePermission block, next to admin/staff', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
+    const ownerOnlyBlock = source.slice(source.indexOf('RequirePermission ownerOnly'), source.indexOf('admin/delivery"'));
+    assert.match(ownerOnlyBlock, /admin\/staff/);
+    assert.match(ownerOnlyBlock, /admin\/settings/);
+  });
+
+  it('admin/account is not wrapped in any RequirePermission — any panel user reaches it, gated only by ProtectedRoute', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
+    const line = source.split('\n').find((entry) => entry.includes('path="admin/account"'));
+    assert.ok(line, 'admin/account route must exist');
+    assert.ok(!line.includes('RequirePermission'));
+  });
+
+  it('delivery/settings is nested inside the same DeliveryProtectedRoute + DeliveryLayout block as the dashboard', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
+    const deliveryBlock = source.slice(source.indexOf('DeliveryProtectedRoute />'), source.indexOf('admin/login'));
+    assert.match(deliveryBlock, /path="delivery"/);
+    assert.match(deliveryBlock, /path="delivery\/settings"/);
+  });
+});
+
+describe('AdminSettingsPage (/admin/settings)', () => {
+  it('shows every settings category in the navigation', () => {
+    const html = render(h(mods.AdminSettingsPage), owner);
+    for (const label of ['General', 'Orders & Delivery', 'Payments', 'Notifications', 'Security & System']) assert.match(html, new RegExp(label.replace(/&/g, '&amp;')), label);
+  });
+
+  it('defaults to the General category, which loads real data (shows a loading state first, never a "not configured yet" placeholder)', () => {
+    const html = render(h(mods.AdminSettingsPage), owner);
+    assert.match(html, /Loading settings/);
+    assert.ok(!html.includes('not configured yet'));
+  });
+
+  it('Payments, Notifications and Security & System still fall back to the no-persistence-yet placeholder (structural check — only General and Orders & Delivery have real forms so far)', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminSettingsPage.jsx', import.meta.url), 'utf8');
+    assert.match(source, /active\.key === 'general'[\s\S]*?<GeneralSettingsForm/);
+    assert.match(source, /active\.key === 'orders-delivery'[\s\S]*?<OrderDeliverySettingsForm/);
+    assert.match(source, /<EmptyState/);
+  });
+});
+
+describe('GeneralSettingsForm (/admin/settings — General category)', () => {
+  it('shows a loading state first, before any saved settings arrive', () => {
+    const html = render(h(mods.GeneralSettingsForm), owner);
+    assert.match(html, /Loading settings/);
+  });
+
+  describe('validateGeneralSettingsForm (pure validation logic)', () => {
+    const validForm = () => ({
+      businessName: 'Janai Foods', phone: '9876543210', email: 'owner@janai.in',
+      address: { line1: '', line2: '', city: '', state: '', postalCode: '411001' },
+    });
+    function hoursAllOpen() {
+      const hours = {};
+      for (const day of ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']) hours[day] = { closed: false, open: '09:00', close: '21:00' };
+      return hours;
+    }
+
+    it('requires a business name', () => {
+      const form = { ...validForm(), businessName: '  ', operatingHours: hoursAllOpen() };
+      assert.ok(mods.validateGeneralSettingsForm(form).businessName);
+      assert.deepEqual(mods.validateGeneralSettingsForm({ ...form, businessName: 'Janai' }), {});
+    });
+
+    it('validates phone and email only when provided (both are optional)', () => {
+      const base = { ...validForm(), operatingHours: hoursAllOpen() };
+      assert.equal(mods.validateGeneralSettingsForm({ ...base, phone: '' }).phone, undefined);
+      assert.ok(mods.validateGeneralSettingsForm({ ...base, phone: '12345' }).phone);
+      assert.equal(mods.validateGeneralSettingsForm({ ...base, email: '' }).email, undefined);
+      assert.ok(mods.validateGeneralSettingsForm({ ...base, email: 'nope' }).email);
+    });
+
+    it('validates the pincode only when provided', () => {
+      const base = { ...validForm(), operatingHours: hoursAllOpen() };
+      assert.equal(mods.validateGeneralSettingsForm({ ...base, address: { ...base.address, postalCode: '' } }).postalCode, undefined);
+      assert.ok(mods.validateGeneralSettingsForm({ ...base, address: { ...base.address, postalCode: '123' } }).postalCode);
+    });
+
+    it('rejects a day whose closing time is not after its opening time, but skips validation entirely for a closed day', () => {
+      const base = { ...validForm(), operatingHours: hoursAllOpen() };
+      const badDay = { ...base, operatingHours: { ...base.operatingHours, monday: { closed: false, open: '20:00', close: '09:00' } } };
+      assert.ok(mods.validateGeneralSettingsForm(badDay)['hours-monday']);
+      const closedBadDay = { ...base, operatingHours: { ...base.operatingHours, monday: { closed: true, open: '20:00', close: '09:00' } } };
+      assert.equal(mods.validateGeneralSettingsForm(closedBadDay)['hours-monday'], undefined);
+    });
+  });
+});
+
+describe('OrderDeliverySettingsForm (/admin/settings — Orders & Delivery category)', () => {
+  it('shows a loading state first, before any saved settings arrive', () => {
+    const html = render(h(mods.OrderDeliverySettingsForm), owner);
+    assert.match(html, /Loading settings/);
+  });
+
+  describe('validateOrderDeliverySettingsForm (pure validation logic)', () => {
+    const validForm = () => ({ deliveryEnabled: true, deliveryFee: '25', freeDeliveryThreshold: '500', minimumOrderValue: '0' });
+
+    it('accepts the valid default form with no errors', () => {
+      assert.deepEqual(mods.validateOrderDeliverySettingsForm(validForm()), {});
+    });
+
+    it('rejects a negative or empty delivery fee', () => {
+      assert.ok(mods.validateOrderDeliverySettingsForm({ ...validForm(), deliveryFee: '-5' }).deliveryFee);
+      assert.ok(mods.validateOrderDeliverySettingsForm({ ...validForm(), deliveryFee: '' }).deliveryFee);
+      assert.ok(mods.validateOrderDeliverySettingsForm({ ...validForm(), deliveryFee: 'free' }).deliveryFee);
+    });
+
+    it('rejects a negative free-delivery threshold or minimum order value', () => {
+      assert.ok(mods.validateOrderDeliverySettingsForm({ ...validForm(), freeDeliveryThreshold: '-1' }).freeDeliveryThreshold);
+      assert.ok(mods.validateOrderDeliverySettingsForm({ ...validForm(), minimumOrderValue: '-1' }).minimumOrderValue);
+    });
+
+    it('allows a zero minimum order value (meaning "no minimum")', () => {
+      assert.equal(mods.validateOrderDeliverySettingsForm({ ...validForm(), minimumOrderValue: '0' }).minimumOrderValue, undefined);
+    });
+  });
+});
+
+describe('deliveryFeeFor (pure pricing logic shared by cart/checkout/pre-order summaries)', () => {
+  it('charges the configured fee below the configured free-delivery threshold', () => {
+    const rules = { deliveryFee: 40, freeDeliveryThreshold: 750 };
+    assert.equal(mods.deliveryFeeFor(300, rules), 40);
+  });
+
+  it('is free at or above the threshold, and for an empty cart', () => {
+    const rules = { deliveryFee: 40, freeDeliveryThreshold: 750 };
+    assert.equal(mods.deliveryFeeFor(750, rules), 0);
+    assert.equal(mods.deliveryFeeFor(900, rules), 0);
+    assert.equal(mods.deliveryFeeFor(0, rules), 0);
+  });
+
+  it('matches the existing hardcoded behaviour under the default rules (₹25 below ₹500)', () => {
+    assert.equal(mods.deliveryFeeFor(200, mods.ORDER_SETTINGS_DEFAULTS), 25);
+    assert.equal(mods.deliveryFeeFor(500, mods.ORDER_SETTINGS_DEFAULTS), 0);
+  });
+});
+
+describe('useOrderSettings (shared cart/checkout/pre-order pricing data behind PriceSummary etc.)', () => {
+  afterEach(() => mods.resetOrderSettingsCache());
+
+  it('loads and normalises the saved settings', async () => {
+    const original = mods.api.get;
+    mods.api.get = async () => ({ data: { settings: { deliveryEnabled: false, deliveryFee: 40, freeDeliveryThreshold: 750, minimumOrderValue: 200 } } });
+    try {
+      const result = await mods.loadOrderSettings();
+      assert.deepEqual(result, { deliveryEnabled: false, deliveryFee: 40, freeDeliveryThreshold: 750, minimumOrderValue: 200 });
+    } finally {
+      mods.api.get = original;
+    }
+  });
+
+  it('falls back to the existing hardcoded defaults if the request fails, so pricing never breaks', async () => {
+    const original = mods.api.get;
+    mods.api.get = async () => { throw new Error('network down'); };
+    try {
+      assert.deepEqual(await mods.loadOrderSettings(), mods.ORDER_SETTINGS_DEFAULTS);
+    } finally {
+      mods.api.get = original;
+    }
+  });
+
+  it('falls back field-by-field to the existing defaults for a response missing some fields', async () => {
+    const original = mods.api.get;
+    mods.api.get = async () => ({ data: { settings: { deliveryFee: 30 } } });
+    try {
+      assert.deepEqual(await mods.loadOrderSettings(), { deliveryEnabled: true, deliveryFee: 30, freeDeliveryThreshold: 500, minimumOrderValue: 0 });
+    } finally {
+      mods.api.get = original;
+    }
+  });
+
+  it('deduplicates concurrent loads into a single request', async () => {
+    const original = mods.api.get;
+    let calls = 0;
+    mods.api.get = async () => { calls += 1; await new Promise((resolve) => setTimeout(resolve, 10)); return { data: { settings: { deliveryEnabled: true, deliveryFee: 25, freeDeliveryThreshold: 500, minimumOrderValue: 0 } } }; };
+    try {
+      const [a, b] = await Promise.all([mods.loadOrderSettings(), mods.loadOrderSettings()]);
+      assert.equal(calls, 1);
+      assert.deepEqual(a, b);
+    } finally {
+      mods.api.get = original;
+    }
+  });
+
+  it('reuses the cache on a later call instead of fetching again', async () => {
+    const original = mods.api.get;
+    let calls = 0;
+    mods.api.get = async () => { calls += 1; return { data: { settings: { deliveryEnabled: true, deliveryFee: 25, freeDeliveryThreshold: 500, minimumOrderValue: 0 } } }; };
+    try {
+      await mods.loadOrderSettings();
+      await mods.loadOrderSettings();
+      assert.equal(calls, 1);
+    } finally {
+      mods.api.get = original;
+    }
+  });
+});
+
+describe('AdminAccountPage (/admin/account)', () => {
+  it('shows a regular staff member their own login ID, role and permissions, with no edit controls', () => {
+    const member = staff(['orders:view', 'delivery:view'], { firstName: 'Priya', lastName: 'Patel', adminId: 'priya.p' });
+    const html = render(h(mods.AdminAccountPage), member);
+    assert.match(html, /Priya Patel/);
+    assert.match(html, /priya\.p/);
+    assert.match(html, /My Permissions/);
+    assert.match(html, /View orders/);
+    assert.match(html, /View Assigned Deliveries/);
+    assert.ok(!html.includes('<input'), 'account details must be read-only — no edit controls');
+  });
+
+  it('never shows business-wide settings content on the personal account page', () => {
+    const html = render(h(mods.AdminAccountPage), staff(['orders:view']));
+    assert.ok(!html.includes('Orders & Delivery') && !html.includes('Security & System'));
+  });
+
+  it('a logout control is present and wired to the real logout action', () => {
+    const html = render(h(mods.AdminAccountPage), staff(['orders:view']));
+    assert.match(html, />Logout</);
+  });
+
+  it('redirects the owner to /admin/settings instead of showing an empty personal page', () => {
+    const html = render(h(mods.AdminAccountPage), owner);
+    assert.ok(!html.includes('My Account'), 'the owner must not see the personal-account page content');
+  });
+});
+
+describe('DeliverySettingsPage (/delivery/settings)', () => {
+  it('shows the rider their login ID, registered mobile, permissions and a working logout, plus a way back to the dashboard', () => {
+    const rider = staff(['delivery:view', 'delivery:update'], { firstName: 'Ravi', lastName: 'Rider', adminId: 'ravi.r', phone: '9876543210' });
+    const html = render(h(mods.DeliverySettingsPage), rider);
+    assert.match(html, /Ravi Rider/);
+    assert.match(html, /ravi\.r/);
+    assert.match(html, /9876543210/);
+    assert.match(html, /My Permissions/);
+    assert.match(html, /View Assigned Deliveries/);
+    assert.match(html, />Logout</);
+    assert.match(html, /Back to My Deliveries/);
+    assert.ok(!html.includes('<input'), 'no login form or editable credentials — delivery staff sign in by OTP only');
+  });
+});
+
+describe('navigation entry points for Settings', () => {
+  it("a regular staff member's admin topbar avatar links to /admin/account", () => {
+    const html = render(h(mods.AdminTopbar, { onMenuClick() {} }), staff(['orders:view']));
+    assert.match(html, /href="\/admin\/account"/);
+  });
+
+  it("the owner's admin topbar avatar links to /admin/settings instead", () => {
+    const html = render(h(mods.AdminTopbar, { onMenuClick() {} }), owner);
+    assert.match(html, /href="\/admin\/settings"/);
+    assert.ok(!html.includes('href="/admin/account"'));
+  });
+
+  it('the delivery header has a Settings link to /delivery/settings, alongside Logout', () => {
+    const html = render(h(mods.DeliveryLayout, null), staff(['delivery:view']));
+    assert.match(html, /href="\/delivery\/settings"/);
+    assert.match(html, /Logout/);
+  });
+});
+
 describe('session error handling', () => {
   const failure = (status, url, data = {}) => ({ response: { status, data }, config: { url } });
 
@@ -446,5 +787,126 @@ describe('session error handling', () => {
     assert.equal(mods.classifyAuthError(failure(403, '/admin/orders', { message: 'nope' }), true), null);
     assert.equal(mods.classifyAuthError(failure(500, '/admin/orders'), true), null);
     assert.equal(mods.classifyAuthError({}, true), null);
+  });
+});
+
+describe('useBusinessSettings (shared public-branding data behind Navbar/Footer/Contact)', () => {
+  afterEach(() => mods.resetBusinessSettingsCache());
+
+  it('returns the saved business name and logo on a successful fetch, and nothing else from the response', async () => {
+    const original = mods.api.get;
+    mods.api.get = async () => ({ data: { settings: { businessName: 'Fresh Mart', logo: 'data:image/png;base64,ABC', phone: '9876543210', email: 'owner@x.com' } } });
+    try {
+      const result = await mods.loadBusinessSettings();
+      assert.deepEqual(result, { businessName: 'Fresh Mart', logo: 'data:image/png;base64,ABC' });
+    } finally {
+      mods.api.get = original;
+    }
+  });
+
+  it('falls back to the default Janai name/logo when the request fails — a public page must keep working', async () => {
+    const original = mods.api.get;
+    mods.api.get = async () => { throw new Error('network down'); };
+    try {
+      assert.deepEqual(await mods.loadBusinessSettings(), mods.BUSINESS_SETTINGS_DEFAULTS);
+    } finally {
+      mods.api.get = original;
+    }
+  });
+
+  it('falls back to defaults when the saved response is missing fields (a never-configured store)', async () => {
+    const original = mods.api.get;
+    mods.api.get = async () => ({ data: { settings: {} } });
+    try {
+      assert.deepEqual(await mods.loadBusinessSettings(), mods.BUSINESS_SETTINGS_DEFAULTS);
+    } finally {
+      mods.api.get = original;
+    }
+  });
+
+  it('two concurrent callers share one in-flight request instead of firing a duplicate', async () => {
+    const original = mods.api.get;
+    let calls = 0;
+    mods.api.get = async () => { calls += 1; await new Promise((resolve) => setTimeout(resolve, 10)); return { data: { settings: { businessName: 'Once Only', logo: '' } } }; };
+    try {
+      const [a, b] = await Promise.all([mods.loadBusinessSettings(), mods.loadBusinessSettings()]);
+      assert.equal(calls, 1);
+      assert.deepEqual(a, b);
+    } finally {
+      mods.api.get = original;
+    }
+  });
+
+  it('a later call reuses the cache rather than fetching again', async () => {
+    const original = mods.api.get;
+    let calls = 0;
+    mods.api.get = async () => { calls += 1; return { data: { settings: { businessName: 'Cached Name', logo: '' } } }; };
+    try {
+      await mods.loadBusinessSettings();
+      await mods.loadBusinessSettings();
+      assert.equal(calls, 1);
+    } finally {
+      mods.api.get = original;
+    }
+  });
+});
+
+describe('Logo (Navbar + Footer): custom logo, default fallback, broken-image fallback', () => {
+  afterEach(() => mods.resetBusinessSettingsCache());
+
+  it('renders the default Janai wordmark when no custom logo is saved', async () => {
+    mods.api.get = async () => ({ data: { settings: { businessName: 'Janai', logo: '' } } });
+    await mods.loadBusinessSettings(); // pre-warms the shared cache the component reads on its initial render
+    const html = render(h(mods.Logo, null), null);
+    assert.match(html, /src="\/Janai-logo\.jpg"/);
+    assert.ok(!html.includes('is-custom-logo'), 'the default asset must not get the custom-logo object-fit override');
+  });
+
+  it('renders a saved custom logo with object-fit styling (not the default crop) and the saved name as alt text', async () => {
+    const customLogo = 'data:image/png;base64,ABCDEF';
+    mods.api.get = async () => ({ data: { settings: { businessName: 'Fresh Mart', logo: customLogo } } });
+    await mods.loadBusinessSettings();
+    const html = render(h(mods.Logo, null), null);
+    assert.match(html, new RegExp(`src="${customLogo}"`));
+    assert.match(html, /alt="Fresh Mart"/);
+    assert.match(html, /class="is-custom-logo"/);
+    assert.match(html, /aria-label="Fresh Mart home"/);
+  });
+});
+
+describe('public branding: saved business name in Footer and Contact page, with a safe fallback on failure', () => {
+  afterEach(() => mods.resetBusinessSettingsCache());
+
+  it('Footer shows the saved business name in its heading and copyright line', async () => {
+    mods.api.get = async () => ({ data: { settings: { businessName: 'Fresh Mart', logo: '' } } });
+    await mods.loadBusinessSettings();
+    const html = render(h(mods.Layout, null), customer, { path: '/' });
+    assert.match(html, /Shop Fresh Mart/);
+    assert.match(html, /©\s*\d{4}\s*Fresh Mart/);
+  });
+
+  it('Contact page heading shows the saved business name', async () => {
+    mods.api.get = async () => ({ data: { settings: { businessName: 'Fresh Mart', logo: '' } } });
+    await mods.loadBusinessSettings();
+    const html = render(h(mods.ContactPage), customer, { path: '/contact' });
+    assert.match(html, /Contact Fresh Mart/);
+  });
+
+  it('falls back to "Janai" in both places when settings cannot be fetched — the public site never breaks', async () => {
+    mods.api.get = async () => { throw new Error('backend unreachable'); };
+    await mods.loadBusinessSettings();
+    const footerHtml = render(h(mods.Layout, null), customer, { path: '/' });
+    assert.match(footerHtml, /Shop Janai/);
+    assert.match(footerHtml, /©\s*\d{4}\s*Janai/);
+    const contactHtml = render(h(mods.ContactPage), customer, { path: '/contact' });
+    assert.match(contactHtml, /Contact Janai/);
+  });
+
+  it('the rest of the Navbar/Footer/Contact markup and structure is unchanged — only the name/logo are dynamic', () => {
+    const html = render(h(mods.Layout, null), customer, { path: '/' });
+    assert.match(html, /site-header/);
+    assert.match(html, /site-footer/);
+    assert.match(html, /Freshness at your doorstep/);
+    assert.match(html, /Track an order/);
   });
 });

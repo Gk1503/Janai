@@ -8,9 +8,12 @@ import ProtectedRoute from './components/ProtectedRoute'
 import RequirePermission from './components/RequirePermission'
 import ScrollToTop from './components/ScrollToTop'
 import { AuthProvider, CartProvider, ToastProvider } from './context/AppContexts'
+import AdminAccountPage from './pages/AdminAccountPage'
 import AdminHomePage from './pages/AdminHomePage'
+import AdminSettingsPage from './pages/AdminSettingsPage'
 import DeliveryDashboardPage from './pages/DeliveryDashboardPage'
 import DeliveryLoginPage from './pages/DeliveryLoginPage'
+import DeliverySettingsPage from './pages/DeliverySettingsPage'
 import AdminStaffPage from './pages/AdminStaffPage'
 import AdminDeliveryStaffPage from './pages/AdminDeliveryStaffPage'
 import AdminDeliveryManagementPage from './pages/AdminDeliveryManagementPage'
@@ -54,6 +57,7 @@ export default function App() {
     <Route element={<DeliveryProtectedRoute />}>
       <Route element={<DeliveryLayout />}>
         <Route path="delivery" element={<DeliveryDashboardPage />} />
+        <Route path="delivery/settings" element={<DeliverySettingsPage />} />
       </Route>
     </Route>
 
@@ -63,6 +67,10 @@ export default function App() {
         {/* Every group below is permission-gated: a page that is not allowed never mounts, so it fetches nothing.
             The same permissions are enforced again by the backend on every API call. */}
         <Route path="admin" element={<AdminHomePage />} />
+        {/* Personal account settings for any staff/owner with panel access — no extra permission needed
+            beyond ProtectedRoute's own hasPanelAccess check; the page itself redirects the owner to the
+            business Settings below. */}
+        <Route path="admin/account" element={<AdminAccountPage />} />
         <Route element={<RequirePermission any={['products:view', 'inventory:update']} />}>
           <Route path="admin/products" element={<AdminProductsPage />} />
         </Route>
@@ -88,6 +96,7 @@ export default function App() {
         <Route element={<RequirePermission ownerOnly />}>
           <Route path="admin/staff" element={<AdminStaffPage />} />
           <Route path="admin/delivery-staff" element={<AdminDeliveryStaffPage />} />
+          <Route path="admin/settings" element={<AdminSettingsPage />} />
         </Route>
         <Route element={<RequirePermission any={['delivery:view']} />}>
           <Route path="admin/delivery" element={<AdminDeliveryManagementPage />} />
