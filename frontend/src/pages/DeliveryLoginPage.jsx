@@ -3,8 +3,10 @@ import { ArrowRight, ShieldCheck, Truck } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import api, { getApiError } from '../services/api'
 import { useAuth, useToast } from '../context/AppContexts'
+import { useBusinessSettings } from '../hooks/useBusinessSettings'
 import { isDeliveryStaff } from '../utils/permissions'
 import { Field, PhoneInput } from '../components/Forms'
+import { Logo } from '../components/Layout'
 
 // Dedicated OTP login for delivery staff. Deliberately not AuthFrame (that wrapper's copy and photo are
 // grocery-shopper marketing, not appropriate for a delivery partner) but reuses every shared form/OTP
@@ -12,6 +14,7 @@ import { Field, PhoneInput } from '../components/Forms'
 // like the rest of Janai. Mirrors LoginPage's OTP flow exactly; only the endpoints and copy differ.
 export default function DeliveryLoginPage() {
   const { user, loginWithDeliveryOtp } = useAuth()
+  const { businessName } = useBusinessSettings()
   const toast = useToast()
   const navigate = useNavigate()
   const [mobile, setMobile] = useState('')
@@ -91,7 +94,7 @@ export default function DeliveryLoginPage() {
 
   return <div className="rider-auth-page">
     <div className="rider-auth-card">
-      <Link className="brand-logo rider-auth-logo" to="/" aria-label="Janai home"><img src="/Janai-logo.jpg" alt="Janai" /></Link>
+      <Logo className="rider-auth-logo" alt={businessName} />
       <span className="eyebrow rider-auth-eyebrow"><Truck size={14} />JANAI DELIVERY PARTNERS</span>
       <h1 className="rider-auth-title">{otpStep ? 'Verify OTP' : 'Delivery Partner Login'}</h1>
       <p className="rider-auth-description">{otpStep ? `OTP sent to +91 ${mobile}` : 'Sign in with your registered mobile number to see your assigned deliveries.'}</p>

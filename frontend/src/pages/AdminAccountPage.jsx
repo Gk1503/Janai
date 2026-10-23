@@ -3,6 +3,7 @@ import { LogOut, Mail, Phone, ShieldCheck, UserRound } from 'lucide-react'
 import { useAuth } from '../context/AppContexts'
 import { ROLE_PRESETS } from '../utils/permissions'
 import { MyPermissions } from './DeliveryDashboardPage'
+import ChangePasswordForm from '../components/ChangePasswordForm'
 
 // Personal settings for a staff account that uses the admin panel (reuses AdminLayout — no route-level
 // access check needed here beyond what <ProtectedRoute admin /> already enforces in App.jsx: any active
@@ -33,6 +34,14 @@ export default function AdminAccountPage() {
         <div className="adm-profile-item"><span className="adm-profile-icon"><ShieldCheck size={16} /></span><div className="adm-profile-item-body"><small>Status</small><strong>{user?.isActive === false ? 'Inactive' : 'Active'}</strong></div></div>
       </div>
       {/* No edit controls: PUT /auth/me explicitly rejects staff profile edits today (see authController.js), so nothing here is presented as editable or saveable. */}
+    </section>
+
+    {/* A staff member cannot edit their own identity (PUT /auth/me rejects that, unchanged), but they
+        can change their own password: POST /auth/change-password authorises by session, not by role. */}
+    <section className="adm-panel">
+      <h2 className="adm-modal-section-title">Change password</h2>
+      <p className="adm-muted">Updates the password you sign in with. You stay signed in on this device.</p>
+      <ChangePasswordForm />
     </section>
 
     <MyPermissions can={can} />

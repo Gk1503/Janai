@@ -1,8 +1,9 @@
 import Settings from '../models/Settings.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import {
-  normalizeAddress, normalizeBusinessName, normalizeOperatingHours, normalizeOptionalEmail,
-  normalizeOptionalLogo, normalizeOptionalPhone, normalizeOrderSettings,
+  NOTIFICATION_SETTING_KEYS, normalizeAddress, normalizeBusinessName, normalizeNotificationSettings,
+  normalizeOperatingHours, normalizeOptionalEmail, normalizeOptionalLogo, normalizeOptionalPhone,
+  normalizeOrderSettings,
 } from '../utils/settingsValidation.js';
 
 // Upsert-on-read: the first call ever made creates the single canonical document with schema defaults
@@ -105,4 +106,38 @@ export const updateOrderSettings = asyncHandler(async (req, res) => {
     { upsert: true, new: true, setDefaultsOnInsert: true, runValidators: true },
   );
   res.json({ settings: presentOrderSettings(settings), message: 'Settings saved.' });
+});
+
+// A never-configured document (or one predating this category) reads as all-off, so no customer SMS is
+// ever implied by missing data. Carries no gateway URL, API key or any other private configuration.
+function presentNotifications(doc) {
+  const notifications = doc.notifications || {};
+  const presented = { updatedAt: doc.updatedAt };
+  for (const key of NOTIFICATION_SETTING_KEYS) presented[key] = notifications[key] === true;
+  return presented;
+}
+
+// Owner-only to READ as well as write — unlike /general (storefront branding) and /orders-delivery
+// (delivery fees the cart must show), these switches have no public consumer, so they are never exposed
+// on a public endpoint.
+export const getNotificationSettings = asyncHandler(async (req, res) => {
+  const settings = await loadSettings();
+  res.json({ settings: presentNotifications(settings) });
+});
+
+// Owner-only (enforced by requireOwner on the route). No field outside the known switches is ever read
+// from the body, so the request cannot reach any other settings category.
+export const updateNotificationSettings = asyncHandler(async (req, res) => {
+  const unsupported = Object.keys(req.body || {}).filter((key) => !NOTIFICATION_SETTING_KEYS.includes(key));
+  if (unsupported.length) return res.status(400).json({ message: `Unsupported field${unsupported.length > 1 ? 's' : ''}: ${unsupported.join(', ')}.` });
+
+  const notifications = normalizeNotificationSettings(req.body);
+  if (notifications.error) return res.status(400).json({ message: notifications.error });
+
+  const settings = await Settings.findOneAndUpdate(
+    {},
+    { $set: { notifications: notifications.value, updatedBy: req.user._id } },
+    { upsert: true, new: true, setDefaultsOnInsert: true, runValidators: true },
+  );
+  res.json({ settings: presentNotifications(settings), message: 'Settings saved.' });
 });

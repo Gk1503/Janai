@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft, CalendarDays, CircleUserRound, Heart, Home, Leaf, Menu, Package, Search, ShoppingBag, ShoppingCart, X } from 'lucide-react'
 import { useAuth, useCart } from '../context/AppContexts'
-import { useBusinessSettings } from '../hooks/useBusinessSettings'
+import { DEFAULTS, useBusinessSettings } from '../hooks/useBusinessSettings'
 import { hasPanelAccess, homeRedirectFor } from '../utils/permissions'
 
 const navItems = [
@@ -13,21 +13,28 @@ const navItems = [
 ]
 const titles = { '/shop': 'Shop', '/cart': 'My Cart', '/pre-orders': 'Pre Orders', '/bulk-orders': 'Bulk Orders', '/orders': 'My Orders', '/profile': 'My Profile', '/about': 'About Janai', '/contact': 'Contact', '/login': 'Login', '/register': 'Create Account' }
 
-// Shared by the Navbar and Footer. Falls back to the built-in Janai wordmark (identical to before this
-// feature existed) whenever no custom logo is saved, or if a saved one fails to load — the container's
-// fixed height + aspect-ratio never changes either way, so swapping images never shifts layout.
-export function Logo({ className = '' }) {
+// Shared by the Navbar, Footer and the admin sidebar. Falls back to the built-in Janai wordmark
+// (identical to before this feature existed) whenever no custom logo is saved, or if a saved one fails
+// to load — the container's fixed height + aspect-ratio never changes either way, so swapping images
+// never shifts layout.
+//
+// `to={null}` renders a plain span instead of a link, for chrome that is not itself a navigation target
+// (the admin sidebar brand). `alt` overrides the image's alt text for both the saved and default logo.
+// Defaults reproduce the public storefront behaviour exactly.
+export function Logo({ className = '', to = '/', alt, label }) {
   const { businessName, logo } = useBusinessSettings()
   const [broken, setBroken] = useState(false)
   const useCustom = Boolean(logo) && !broken
-  return <Link className={`brand-logo ${className}`} to="/" aria-label={`${businessName} home`}>
-    <img
-      src={useCustom ? logo : '/Janai-logo.jpg'}
-      alt={useCustom ? businessName : 'Janai, Fruits Vegetables Groceries'}
-      className={useCustom ? 'is-custom-logo' : undefined}
-      onError={() => setBroken(true)}
-    />
-  </Link>
+  // Guards against an empty alt/aria-label if a saved name ever arrives blank.
+  const name = businessName || DEFAULTS.businessName
+  const image = <img
+    src={useCustom ? logo : '/Janai-logo.jpg'}
+    alt={alt || (useCustom ? name : 'Janai, Fruits Vegetables Groceries')}
+    className={useCustom ? 'is-custom-logo' : undefined}
+    onError={() => setBroken(true)}
+  />
+  if (!to) return <span className={`brand-logo ${className}`}>{image}</span>
+  return <Link className={`brand-logo ${className}`} to={to} aria-label={label || `${name} home`}>{image}</Link>
 }
 
 function CartLink() {

@@ -3,6 +3,7 @@ import Order from '../models/Order.js';
 import Product from '../models/Product.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import { DELIVERY_TRANSITIONS, ORDER_TYPE_PERMISSIONS, hasPermission, orderTypeCondition, viewableOrderTypes } from '../config/permissions.js';
+import { dispatchOrderNotification, dispatchStatusNotification } from '../utils/orderNotifications.js';
 import { deliveryFeeFor, loadOrderPricingRules } from '../utils/orderPricing.js';
 import { maskOrder } from '../utils/privacy.js';
 import { buildStatusEntry, statusUpdateWithAudit, withPresentedHistory, withoutStatusHistory } from '../utils/statusAudit.js';
@@ -68,6 +69,10 @@ export function createOrder(orderType = 'normal') {
         cart.items = cart.items.filter((entry) => !items.some((item) => String(item.productId) === String(entry.product)));
         await cart.save();
       }
+      // Only once the order exists and the cart has been updated — never for failed validation, a lost
+      // stock race or any path that doesn't reach here. Fire-and-forget: it cannot delay or fail this
+      // response, and Order.create happens exactly once, so one order means one notification.
+      dispatchOrderNotification(order, 'orderPlaced');
       return res.status(201).json({ order, message: orderType === 'preorder' ? 'Pre-order scheduled.' : 'Order placed successfully.' });
     } catch (error) {
       await Promise.all(reserved.map((item) => Product.updateOne({ _id: item.productId }, { $inc: { stock: item.quantity } })));
@@ -115,6 +120,9 @@ export const cancelPreOrder = asyncHandler(async (req, res) => {
     { new: true, runValidators: true },
   );
   if (!cancelled) return res.status(409).json({ message: 'This pre-order can no longer be cancelled.' });
+  // Past the conditional update, so exactly one concurrent request reaches here — a competing request
+  // gets the 409 above and sends nothing.
+  dispatchOrderNotification(cancelled, 'orderCancelled');
   res.json({ order: withoutStatusHistory(cancelled), message: 'Pre-order cancelled.' });
 });
 
@@ -145,6 +153,10 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
   const entry = buildStatusEntry(req.user, current.orderType || 'normal', current.orderStatus, orderStatus);
   const order = await Order.findOneAndUpdate({ _id: current.id, orderStatus: current.orderStatus }, statusUpdateWithAudit('orderStatus', orderStatus, entry), { new: true, runValidators: true }).select('+statusHistory');
   if (!order) return res.status(409).json({ message: 'This order was just updated by someone else. Refresh and try again.' });
+  // Past the conditional update, so this transition genuinely happened and exactly one request won it.
+  // `order` is the raw document, not the masked `presented` copy below, so the recipient's real number
+  // is resolved server-side without changing what any viewer is allowed to see in the response.
+  dispatchStatusNotification(order);
   const presented = withPresentedHistory(maskOrder(order, req.user), req.user, true);
   // Normal orders reserve stock at checkout; pre-orders do not. The conditional update above lets exactly
   // one request win a cancellation, so each reservation is returned at most once.

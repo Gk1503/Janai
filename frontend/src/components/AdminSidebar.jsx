@@ -2,13 +2,18 @@ import { useEffect, useMemo, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { ChevronDown, ChevronUp, LogOut } from 'lucide-react'
 import { useAuth } from '../context/AppContexts'
+import { useBusinessSettings } from '../hooks/useBusinessSettings'
 import { adminNavigation } from './adminNavigation'
+import { Logo } from './Layout'
 import { filterNavigation } from '../utils/permissions'
 
 const groupForPath = (navigation, pathname) => navigation.find((group) => group.items.some((item) => pathname === item.path || (!item.end && pathname.startsWith(`${item.path}/`))))?.label
 
 export default function AdminSidebar({ open = false, onNavigate = () => {} }) {
   const { logout, can, isOwner } = useAuth()
+  // Same shared fetch/cache the storefront uses — no extra request for the panel, and the owner's
+  // General Settings save invalidates it, so the next panel load shows the new branding.
+  const { businessName } = useBusinessSettings()
   const { pathname } = useLocation()
   // Only items the user may open are shown, and a group with nothing left disappears.
   const navigation = useMemo(() => filterNavigation(adminNavigation, can, isOwner), [can, isOwner])
@@ -35,7 +40,10 @@ export default function AdminSidebar({ open = false, onNavigate = () => {} }) {
 
   return <aside className={`adm-sidebar${open ? ' is-open' : ''}`} aria-label="Admin navigation">
     <div className="adm-sidebar-brand">
-      <span className="brand-logo adm-sidebar-logo"><img src="/Janai-logo.jpg" alt="Janai" /></span>
+      {/* Same shared Logo as the storefront, so a saved logo gets the same object-fit handling and
+          broken-image fallback here. to={null} keeps it a plain span, exactly as before — the sidebar
+          brand has never been a link. */}
+      <Logo className="adm-sidebar-logo" to={null} alt={businessName} />
       <span className="adm-sidebar-brand-text">Admin Panel</span>
     </div>
 

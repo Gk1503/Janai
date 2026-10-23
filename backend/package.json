@@ -7,7 +7,7 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "seed": "node seed.js",
-    "test": "node --test test/phase1.test.js test/phase2.test.js test/phase3.test.js test/frontend-permissions.test.js test/phase6.test.js test/phase7.test.js test/phase8.test.js test/phase9.test.js",
+    "test": "node --test test/phase1.test.js test/phase2.test.js test/phase3.test.js test/frontend-permissions.test.js test/phase6.test.js test/phase7.test.js test/phase8.test.js test/phase9.test.js test/phase10.test.js test/phase11.test.js",
     "migrate:user-indexes": "node scripts/migrateUserIndexes.js",
     "migrate:login-otp-indexes": "node scripts/migrateLoginOtpIndexes.js"
   },

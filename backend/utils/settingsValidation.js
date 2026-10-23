@@ -85,6 +85,21 @@ function normalizeAmount(input, label, fallback) {
   return { value: Math.round(num * 100) / 100 };
 }
 
+// Customer SMS notification switches. Anything missing or non-boolean normalises to false, so a partial
+// or malformed body can only ever turn notifications OFF, never silently switch customer SMS on.
+export const NOTIFICATION_SETTING_KEYS = ['enabled', 'orderPlaced', 'outForDelivery', 'delivered', 'orderCancelled'];
+
+export function normalizeNotificationSettings(input) {
+  if (input !== undefined && !isPlainObject(input)) return { error: 'Invalid notification settings.' };
+  const source = isPlainObject(input) ? input : {};
+  const value = {};
+  for (const key of NOTIFICATION_SETTING_KEYS) {
+    if (source[key] !== undefined && typeof source[key] !== 'boolean') return { error: `${key} must be true or false.` };
+    value[key] = source[key] === true;
+  }
+  return { value };
+}
+
 // Every field is independently optional — a missing one falls back to its existing schema default
 // rather than 0, so a partial/malformed body can never silently zero out delivery pricing.
 export function normalizeOrderSettings(input) {

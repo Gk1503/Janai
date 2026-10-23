@@ -34,10 +34,21 @@ const orderSettingsSchema = new mongoose.Schema({
 	minimumOrderValue: { type: Number, min: 0, default: 0 },
 }, { _id: false });
 
+// Customer SMS notifications. Every switch defaults to false: no customer is ever messaged until the
+// owner explicitly turns notifications on, including on an existing settings document that predates
+// this category (a missing sub-object reads as all-off).
+const notificationSettingsSchema = new mongoose.Schema({
+	enabled: { type: Boolean, default: false },
+	orderPlaced: { type: Boolean, default: false },
+	outForDelivery: { type: Boolean, default: false },
+	delivered: { type: Boolean, default: false },
+	orderCancelled: { type: Boolean, default: false },
+}, { _id: false });
+
 // Single canonical business-settings document. Controllers always read/write via Settings.findOne({})
 // (or an upsert against {}), never by a caller-supplied id, so a second document can never be created
-// through normal use. `general` and `orderSettings` are the categories implemented so far (Payments,
-// Notifications and Security & System are later steps) but each lives in its own sub-object so those can
+// through normal use. `general`, `orderSettings` and `notifications` are the categories implemented so
+// far (Payments and Security & System are later steps) but each lives in its own sub-object so those can
 // be added as siblings later without disturbing these.
 const settingsSchema = new mongoose.Schema({
 	general: {
@@ -51,6 +62,7 @@ const settingsSchema = new mongoose.Schema({
 		operatingHours: { type: operatingHoursSchema, default: () => ({}) },
 	},
 	orderSettings: { type: orderSettingsSchema, default: () => ({}) },
+	notifications: { type: notificationSettingsSchema, default: () => ({}) },
 	updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
 }, { timestamps: true });
 
