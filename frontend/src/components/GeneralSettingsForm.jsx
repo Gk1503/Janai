@@ -6,6 +6,7 @@ import { Loader } from './UI'
 import { Field, PhoneInput } from './Forms'
 import { MAX_IMAGE_BYTES, readImageAsDataUrl } from './ProductFormModal'
 import { invalidateBusinessSettings } from '../hooks/useBusinessSettings'
+import { registerSettingsFormGuard, useBeforeUnloadWarning } from '../hooks/useSettingsFormGuard'
 
 export const DAYS = [
   ['monday', 'Monday'], ['tuesday', 'Tuesday'], ['wednesday', 'Wednesday'], ['thursday', 'Thursday'],
@@ -48,7 +49,7 @@ export function validateGeneralSettingsForm(form) {
   return errors
 }
 
-export default function GeneralSettingsForm() {
+export default function GeneralSettingsForm({ formGuardRef } = {}) {
   const toast = useToast()
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
@@ -76,31 +77,24 @@ export default function GeneralSettingsForm() {
   useEffect(() => { load() }, [])
 
   const dirty = JSON.stringify(form) !== JSON.stringify(saved)
-
-  // Warns on a tab close/refresh/external navigation while there are unsaved changes. In-app
-  // navigation (clicking another sidebar link) isn't caught — this app's router is a plain
-  // <BrowserRouter>, and react-router's in-app navigation blocker needs a data router, which would be
-  // a much larger change than this step calls for.
-  useEffect(() => {
-    function onBeforeUnload(event) {
-      if (!dirty) return
-      event.preventDefault()
-      event.returnValue = ''
-    }
-    window.addEventListener('beforeunload', onBeforeUnload)
-    return () => window.removeEventListener('beforeunload', onBeforeUnload)
-  }, [dirty])
+  useBeforeUnloadWarning(dirty)
+  // Exposes {dirty, saving, save} on the ref AdminSettingsPage holds for whichever category is active,
+  // so switching categories can detect unsaved changes and trigger this exact save — no second request,
+  // no duplicated validation. See hooks/useSettingsFormGuard.js.
+  registerSettingsFormGuard(formGuardRef, { dirty, saving, save: doSave })
 
   function set(key, value) { setForm((current) => ({ ...current, [key]: value })); setErrors((current) => ({ ...current, [key]: '' })) }
   function setAddress(key, value) { setForm((current) => ({ ...current, address: { ...current.address, [key]: value } })); setErrors((current) => ({ ...current, postalCode: '' })) }
   function setHours(day, patch) { setForm((current) => ({ ...current, operatingHours: { ...current.operatingHours, [day]: { ...current.operatingHours[day], ...patch } } })); setErrors((current) => ({ ...current, [`hours-${day}`]: '' })) }
 
-  async function save(event) {
-    event.preventDefault()
-    if (saving) return
+  // Returns true/false so both the form's own submit AND the cross-category nav-guard dialog (which
+  // only navigates on success) can tell whether the save actually went through, without a second
+  // request or re-running validation separately.
+  async function doSave() {
+    if (saving) return false
     const nextErrors = validateGeneralSettingsForm(form)
     setErrors(nextErrors)
-    if (Object.keys(nextErrors).length) return
+    if (Object.keys(nextErrors).length) return false
     setSaving(true)
     try {
       const { data } = await api.patch('/settings/general', form)
@@ -111,12 +105,15 @@ export default function GeneralSettingsForm() {
       // the next public page load reflects what was just saved rather than stale data.
       invalidateBusinessSettings()
       toast(data.message || 'Settings saved.')
+      return true
     } catch (requestError) {
       toast(getApiError(requestError), 'error')
+      return false
     } finally {
       setSaving(false)
     }
   }
+  function save(event) { event.preventDefault(); doSave() }
 
   function discard() {
     setForm(saved)

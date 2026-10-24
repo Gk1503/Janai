@@ -4,6 +4,7 @@ import api, { getApiError } from '../services/api'
 import { useToast } from '../context/AppContexts'
 import { Loader } from './UI'
 import { Field } from './Forms'
+import { registerSettingsFormGuard, useBeforeUnloadWarning } from '../hooks/useSettingsFormGuard'
 
 function blankForm() {
   return { deliveryEnabled: true, deliveryFee: '25', freeDeliveryThreshold: '500', minimumOrderValue: '0' }
@@ -41,7 +42,7 @@ export function validateOrderDeliverySettingsForm(form) {
   return errors
 }
 
-export default function OrderDeliverySettingsForm() {
+export default function OrderDeliverySettingsForm({ formGuardRef } = {}) {
   const toast = useToast()
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
@@ -67,27 +68,16 @@ export default function OrderDeliverySettingsForm() {
   useEffect(() => { load() }, [])
 
   const dirty = JSON.stringify(form) !== JSON.stringify(saved)
-
-  // Same unsaved-changes-on-close warning as GeneralSettingsForm; in-app navigation isn't caught for
-  // the same reason (a plain <BrowserRouter>, no data router / useBlocker).
-  useEffect(() => {
-    function onBeforeUnload(event) {
-      if (!dirty) return
-      event.preventDefault()
-      event.returnValue = ''
-    }
-    window.addEventListener('beforeunload', onBeforeUnload)
-    return () => window.removeEventListener('beforeunload', onBeforeUnload)
-  }, [dirty])
+  useBeforeUnloadWarning(dirty)
+  registerSettingsFormGuard(formGuardRef, { dirty, saving, save: doSave })
 
   function set(key, value) { setForm((current) => ({ ...current, [key]: value })); setErrors((current) => ({ ...current, [key]: '' })) }
 
-  async function save(event) {
-    event.preventDefault()
-    if (saving) return
+  async function doSave() {
+    if (saving) return false
     const nextErrors = validateOrderDeliverySettingsForm(form)
     setErrors(nextErrors)
-    if (Object.keys(nextErrors).length) return
+    if (Object.keys(nextErrors).length) return false
     setSaving(true)
     try {
       const { data } = await api.patch('/settings/orders-delivery', toPayload(form))
@@ -95,12 +85,15 @@ export default function OrderDeliverySettingsForm() {
       setSaved(next)
       setForm(next)
       toast(data.message || 'Settings saved.')
+      return true
     } catch (requestError) {
       toast(getApiError(requestError), 'error')
+      return false
     } finally {
       setSaving(false)
     }
   }
+  function save(event) { event.preventDefault(); doSave() }
 
   function discard() { setForm(saved); setErrors({}) }
 
