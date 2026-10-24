@@ -1,5 +1,5 @@
 import { Link, Outlet } from 'react-router-dom'
-import { LogOut } from 'lucide-react'
+import { LogOut, Settings } from 'lucide-react'
 import { useAuth } from '../context/AppContexts'
 
 // Dedicated chrome for the rider portal: logo + identity + logout only. No admin sidebar, no customer
@@ -17,6 +17,7 @@ export default function DeliveryLayout() {
         <span className="rider-avatar">{initials}</span>
         <span className="rider-header-text"><strong>{name}</strong><small>Delivery Partner</small></span>
       </div>
+      <Link to="/delivery/settings" className="rider-icon-link" aria-label="Settings"><Settings size={18} /></Link>
       <button type="button" className="rider-logout" onClick={logout} aria-label="Log out of the delivery portal"><LogOut size={18} /><span>Logout</span></button>
     </header>
     <main className="rider-main"><Outlet /></main>

@@ -3,6 +3,7 @@ import Order from '../models/Order.js';
 import Product from '../models/Product.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import { DELIVERY_TRANSITIONS, ORDER_TYPE_PERMISSIONS, hasPermission, orderTypeCondition, viewableOrderTypes } from '../config/permissions.js';
+import { deliveryFeeFor, loadOrderPricingRules } from '../utils/orderPricing.js';
 import { maskOrder } from '../utils/privacy.js';
 import { buildStatusEntry, statusUpdateWithAudit, withPresentedHistory, withoutStatusHistory } from '../utils/statusAudit.js';
 
@@ -25,6 +26,12 @@ export function createOrder(orderType = 'normal') {
     selectedDay.setHours(0, 0, 0, 0);
     if (selectedDay < today || (orderType === 'preorder' && selectedDay <= today)) return res.status(400).json({ message: 'Choose a valid future delivery date.' });
 
+    // Both normal orders and pre-orders are delivered through the same mechanism (deliveryAddress,
+    // assignedDeliveryStaff, etc.), so turning delivery off blocks both — bulk orders are a separate,
+    // quote-only workflow (BulkOrder model) with no delivery/total of their own and are unaffected.
+    const rules = await loadOrderPricingRules();
+    if (!rules.deliveryEnabled) return res.status(409).json({ message: 'Delivery is currently unavailable. Please check back later.' });
+
     const cart = await Cart.findOne({ user: req.user.id });
     const sourceItems = Array.isArray(req.body.items) && req.body.items.length ? req.body.items : cart?.items || [];
     if (!sourceItems.length) return res.status(400).json({ message: 'Your cart is empty.' });
@@ -42,7 +49,11 @@ export function createOrder(orderType = 'normal') {
       subtotal += product.price * item.quantity;
       orderItems.push({ product: product.id, name: product.name, image: product.images[0] || '', price: product.price, unit: product.unit, quantity: item.quantity });
     }
-    const totalAmount = subtotal + (subtotal >= 500 ? 0 : 25);
+    if (subtotal < rules.minimumOrderValue) return res.status(400).json({ message: `Minimum order value is ₹${rules.minimumOrderValue}. Add more items to continue.` });
+    // The server computes this from the current settings and the looked-up product prices alone —
+    // nothing from the request body ever contributes to totalAmount, so a client-supplied total is
+    // never trusted either before or after this change.
+    const totalAmount = subtotal + deliveryFeeFor(subtotal, rules);
     const reserved = [];
     try {
       if (orderType === 'normal') {

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft, CalendarDays, CircleUserRound, Heart, Home, Leaf, Menu, Package, Search, ShoppingBag, ShoppingCart, X } from 'lucide-react'
 import { useAuth, useCart } from '../context/AppContexts'
+import { useBusinessSettings } from '../hooks/useBusinessSettings'
 import { hasPanelAccess, homeRedirectFor } from '../utils/permissions'
 
 const navItems = [
@@ -12,8 +13,21 @@ const navItems = [
 ]
 const titles = { '/shop': 'Shop', '/cart': 'My Cart', '/pre-orders': 'Pre Orders', '/bulk-orders': 'Bulk Orders', '/orders': 'My Orders', '/profile': 'My Profile', '/about': 'About Janai', '/contact': 'Contact', '/login': 'Login', '/register': 'Create Account' }
 
-function Logo({ className = '' }) {
-  return <Link className={`brand-logo ${className}`} to="/" aria-label="Janai home"><img src="/Janai-logo.jpg" alt="Janai, Fruits Vegetables Groceries" /></Link>
+// Shared by the Navbar and Footer. Falls back to the built-in Janai wordmark (identical to before this
+// feature existed) whenever no custom logo is saved, or if a saved one fails to load — the container's
+// fixed height + aspect-ratio never changes either way, so swapping images never shifts layout.
+export function Logo({ className = '' }) {
+  const { businessName, logo } = useBusinessSettings()
+  const [broken, setBroken] = useState(false)
+  const useCustom = Boolean(logo) && !broken
+  return <Link className={`brand-logo ${className}`} to="/" aria-label={`${businessName} home`}>
+    <img
+      src={useCustom ? logo : '/Janai-logo.jpg'}
+      alt={useCustom ? businessName : 'Janai, Fruits Vegetables Groceries'}
+      className={useCustom ? 'is-custom-logo' : undefined}
+      onError={() => setBroken(true)}
+    />
+  </Link>
 }
 
 function CartLink() {
@@ -61,7 +75,8 @@ function MobileBottomNav() {
 }
 
 function Footer() {
-  return <footer className="site-footer"><div className="footer-inner page-container"><div><Logo className="footer-logo" /><p>Fresh picks from growers and makers we trust.</p></div><div><h3>Shop Janai</h3><Link to="/shop">All produce</Link><Link to="/pre-orders">Pre-orders</Link><Link to="/bulk-orders">Bulk orders</Link></div><div><h3>About</h3><Link to="/about">Our story</Link><Link to="/contact">Contact us</Link><Link to="/orders">Track an order</Link></div><div className="footer-motto"><Leaf size={18} /><span>Freshness at your doorstep</span></div></div><div className="footer-bottom page-container">© {new Date().getFullYear()} Janai Foods</div></footer>
+  const { businessName } = useBusinessSettings()
+  return <footer className="site-footer"><div className="footer-inner page-container"><div><Logo className="footer-logo" /><p>Fresh picks from growers and makers we trust.</p></div><div><h3>Shop {businessName}</h3><Link to="/shop">All produce</Link><Link to="/pre-orders">Pre-orders</Link><Link to="/bulk-orders">Bulk orders</Link></div><div><h3>About</h3><Link to="/about">Our story</Link><Link to="/contact">Contact us</Link><Link to="/orders">Track an order</Link></div><div className="footer-motto"><Leaf size={18} /><span>Freshness at your doorstep</span></div></div><div className="footer-bottom page-container">© {new Date().getFullYear()} {businessName}</div></footer>
 }
 
 export default function Layout() {

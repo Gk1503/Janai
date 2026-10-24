@@ -44,42 +44,45 @@ export const ROLE_PRESETS = {
 }
 
 // How the Staff & Access form groups permissions. `available: false` marks modules that do not exist yet.
+// `description` is a one-line, plain-language explanation of what holding that permission actually lets
+// someone do — used by the Delivery Partner dashboard's "My Permissions" section (DeliveryDashboardPage.jsx)
+// as well as this form, so it is kept here rather than duplicated per consumer.
 export const PERMISSION_GROUPS = [
   { key: 'orders', label: 'Orders', items: [
-    { permission: 'orders:view', label: 'View orders' },
-    { permission: 'orders:update_status', label: 'Update order status' },
-    { permission: 'orders:cancel', label: 'Cancel orders' },
+    { permission: 'orders:view', label: 'View orders', description: 'See all customer orders — items, delivery details, status and payment.' },
+    { permission: 'orders:update_status', label: 'Update order status', description: 'Move an order forward through its stages: confirmed, preparing, out for delivery, delivered.' },
+    { permission: 'orders:cancel', label: 'Cancel orders', description: "Cancel an order that hasn't been delivered yet." },
   ] },
   { key: 'preorders', label: 'Pre Orders', items: [
-    { permission: 'preorders:view', label: 'View pre-orders' },
-    { permission: 'preorders:update', label: 'Update or cancel pre-orders' },
+    { permission: 'preorders:view', label: 'View pre-orders', description: 'See pre-orders customers have scheduled for a future date.' },
+    { permission: 'preorders:update', label: 'Update or cancel pre-orders', description: 'Update the status of a pre-order, or cancel it.' },
   ] },
   { key: 'bulk', label: 'Bulk Orders', items: [
-    { permission: 'bulk:view', label: 'View bulk requests' },
-    { permission: 'bulk:update', label: 'Review and update bulk requests' },
+    { permission: 'bulk:view', label: 'View bulk requests', description: 'See bulk order requests submitted by businesses.' },
+    { permission: 'bulk:update', label: 'Review and update bulk requests', description: 'Review a bulk order request and update its status.' },
   ] },
   { key: 'products', label: 'Products', items: [
-    { permission: 'products:view', label: 'View products and supplier costs' },
-    { permission: 'products:manage', label: 'Add, edit and delete products' },
+    { permission: 'products:view', label: 'View products and supplier costs', description: 'See the product catalog, including supplier cost prices.' },
+    { permission: 'products:manage', label: 'Add, edit and delete products', description: 'Add new products, and edit or remove existing ones.' },
   ] },
   { key: 'inventory', label: 'Inventory', items: [
-    { permission: 'inventory:update', label: 'Update stock quantities and purchases' },
+    { permission: 'inventory:update', label: 'Update stock quantities and purchases', description: 'Adjust stock quantities and record supplier purchases.' },
   ] },
   { key: 'categories', label: 'Categories', items: [
-    { permission: 'categories:manage', label: 'Manage categories' },
+    { permission: 'categories:manage', label: 'Manage categories', description: 'Create, edit and remove product categories.' },
   ] },
   { key: 'customers', label: 'Customers', items: [
-    { permission: 'customers:view', label: 'View customers' },
+    { permission: 'customers:view', label: 'View customers', description: 'See the list of registered customers and their order history.' },
   ] },
   { key: 'contact-details', label: 'Customer Contact Details', items: [
-    { permission: 'customers:view_contact', label: 'See full customer email and phone' },
+    { permission: 'customers:view_contact', label: 'See full customer email and phone', description: "See a customer's full, unmasked email address and phone number." },
   ] },
   { key: 'contact', label: 'Contact Messages', items: [
-    { permission: 'contact:view', label: 'View contact messages' },
+    { permission: 'contact:view', label: 'View contact messages', description: 'See messages submitted through the Contact page.' },
   ] },
   { key: 'delivery', label: 'Delivery', available: false, items: [
-    { permission: 'delivery:view', label: 'View deliveries' },
-    { permission: 'delivery:update', label: 'Update deliveries' },
+    { permission: 'delivery:view', label: 'View deliveries', description: 'See orders ready for delivery and who they are assigned to.' },
+    { permission: 'delivery:update', label: 'Update deliveries', description: 'Assign deliveries to staff and update their delivery status.' },
   ] },
 ]
 

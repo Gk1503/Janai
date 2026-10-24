@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowRight, CalendarDays, Check, Leaf, Mail, MapPin, Phone, 
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import api, { getApiError } from '../services/api'
 import { useAuth, useToast } from '../context/AppContexts'
+import { useBusinessSettings } from '../hooks/useBusinessSettings'
 import { hasPanelAccess } from '../utils/permissions'
 import { Field, PhoneInput } from '../components/Forms'
 import { hasErrors, validateEmail, validateMobile, validateName, validateRequired } from '../utils/validation'
@@ -129,6 +130,7 @@ const contactSubjects = ['General question', 'Order support', 'Delivery issue', 
 
 export function ContactPage() {
   const toast = useToast()
+  const { businessName } = useBusinessSettings()
   const [form, setForm] = useState({ name: '', email: '', phone: '', subject: 'General question', message: '' })
   const [errors, setErrors] = useState({})
   const [busy, setBusy] = useState(false)
@@ -142,7 +144,7 @@ export function ContactPage() {
     setBusy(true)
     try { const { data } = await api.post('/contact', form); toast(data.message || 'Message sent.'); setForm({ name: '', email: '', phone: '', subject: 'General question', message: '' }) } catch (requestError) { setError(getApiError(requestError)) } finally { setBusy(false) }
   }
-  return <section className="page-container contact-page"><div className="page-title-row"><div><span className="eyebrow">WE’RE HERE TO HELP</span><h1>Contact Janai</h1></div></div><div className="contact-layout"><form className="contact-form" onSubmit={submit} noValidate><div className="form-grid"><Field label="Name" required error={errors.name}><input autoComplete="name" value={form.name} onChange={(event) => set('name', event.target.value)} /></Field><Field label="Email" required error={errors.email}><input type="email" inputMode="email" autoComplete="email" value={form.email} onChange={(event) => set('email', event.target.value.trim())} placeholder="you@example.com" /></Field><Field label="Mobile Number" optional error={errors.phone}><PhoneInput value={form.phone} onChange={(value) => set('phone', value)} invalid={Boolean(errors.phone)} /></Field><Field label="Subject" required><select value={form.subject} onChange={(event) => set('subject', event.target.value)}>{contactSubjects.map((subject) => <option key={subject} value={subject}>{subject}</option>)}</select></Field><Field label="Message" required wide error={errors.message}><textarea rows="4" maxLength="2000" value={form.message} onChange={(event) => set('message', event.target.value)} placeholder="How can we help?" /></Field></div>{error && <div className="form-error">{error}</div>}<button className="button button-primary" disabled={busy}>{busy ? 'Sending…' : 'Send message'}<ArrowRight size={16} /></button></form><aside className="contact-aside"><h2>Need a hand?</h2><p><Phone size={16} /> +91 98765 43210</p><p><Mail size={16} /> hello@janai.in</p><p><MapPin size={16} /> Serving local homes and businesses</p></aside></div></section>
+  return <section className="page-container contact-page"><div className="page-title-row"><div><span className="eyebrow">WE’RE HERE TO HELP</span><h1>Contact {businessName}</h1></div></div><div className="contact-layout"><form className="contact-form" onSubmit={submit} noValidate><div className="form-grid"><Field label="Name" required error={errors.name}><input autoComplete="name" value={form.name} onChange={(event) => set('name', event.target.value)} /></Field><Field label="Email" required error={errors.email}><input type="email" inputMode="email" autoComplete="email" value={form.email} onChange={(event) => set('email', event.target.value.trim())} placeholder="you@example.com" /></Field><Field label="Mobile Number" optional error={errors.phone}><PhoneInput value={form.phone} onChange={(value) => set('phone', value)} invalid={Boolean(errors.phone)} /></Field><Field label="Subject" required><select value={form.subject} onChange={(event) => set('subject', event.target.value)}>{contactSubjects.map((subject) => <option key={subject} value={subject}>{subject}</option>)}</select></Field><Field label="Message" required wide error={errors.message}><textarea rows="4" maxLength="2000" value={form.message} onChange={(event) => set('message', event.target.value)} placeholder="How can we help?" /></Field></div>{error && <div className="form-error">{error}</div>}<button className="button button-primary" disabled={busy}>{busy ? 'Sending…' : 'Send message'}<ArrowRight size={16} /></button></form><aside className="contact-aside"><h2>Need a hand?</h2><p><Phone size={16} /> +91 98765 43210</p><p><Mail size={16} /> hello@janai.in</p><p><MapPin size={16} /> Serving local homes and businesses</p></aside></div></section>
 }
 
 export function AdminLoginPage() {

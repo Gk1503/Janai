@@ -4,17 +4,19 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import api, { getApiError } from '../services/api'
 import { useAuth, useCart, useToast } from '../context/AppContexts'
 import { AddressFields, AddressPicker, Field, TimeSlotField, useDeliveryAddress } from '../components/Forms'
-import { deliveryFeeFor, EmptyState, formatPrice, FREE_DELIVERY_MIN, Loader, OrderCard, ProductImage, QuantitySelector } from '../components/UI'
+import { deliveryFeeFor, EmptyState, formatPrice, Loader, OrderCard, ProductImage, QuantitySelector } from '../components/UI'
+import { useOrderSettings } from '../hooks/useOrderSettings'
 import { blankAddress, formatAddress, hasErrors, localDate, validateAddress, validateFutureDate } from '../utils/validation'
 
 const formatDate = (value) => new Date(value.length === 10 ? `${value}T00:00:00` : value).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
 
 function PriceSummary({ subtotal, children }) {
-  const fee = deliveryFeeFor(subtotal)
+  const orderSettings = useOrderSettings()
+  const fee = deliveryFeeFor(subtotal, orderSettings)
   return <>
     <div><span>Subtotal</span><strong>{formatPrice(subtotal)}</strong></div>
-    <div><span>Delivery fee</span><strong>{fee ? formatPrice(fee) : 'Free'}</strong></div>
-    {fee > 0 && <p className="summary-hint">Add {formatPrice(FREE_DELIVERY_MIN - subtotal)} more for free delivery.</p>}
+    <div><span>Delivery fee</span><strong>{orderSettings.deliveryEnabled ? (fee ? formatPrice(fee) : 'Free') : 'Unavailable'}</strong></div>
+    {orderSettings.deliveryEnabled && fee > 0 && <p className="summary-hint">Add {formatPrice(orderSettings.freeDeliveryThreshold - subtotal)} more for free delivery.</p>}
     <div className="summary-total"><span>Total Amount</span><strong>{formatPrice(subtotal + fee)}</strong></div>
     {children}
   </>
@@ -23,16 +25,18 @@ function PriceSummary({ subtotal, children }) {
 export function CartPage() {
   const { user } = useAuth()
   const { items, total, cartLoading, setQuantity, removeItem } = useCart()
+  const orderSettings = useOrderSettings()
   const toast = useToast()
   const [busy, setBusy] = useState(false)
   if (!user) return <section className="page-container content-page"><div className="page-title-row"><div><span className="eyebrow">YOUR BASKET</span><h1>My Cart</h1></div></div><EmptyState icon={ShoppingBag} title="Sign in to see your cart" message="Your basket is linked to your Janai account." action="Sign in" to="/login" /></section>
   async function remove(productId) { setBusy(true); try { await removeItem(productId); toast('Item removed from cart.') } catch (error) { toast(getApiError(error), 'error') } finally { setBusy(false) } }
   async function quantity(productId, value) { setBusy(true); try { await setQuantity(productId, value) } catch (error) { toast(getApiError(error), 'error') } finally { setBusy(false) } }
-  return <section className="page-container content-page"><div className="page-title-row"><div><span className="eyebrow">YOUR BASKET</span><h1>My Cart <small>{items.length}</small></h1><p>A little freshness is on its way.</p></div><Link className="text-link" to="/shop"><ArrowLeft size={15} /> Continue shopping</Link></div>{cartLoading ? <Loader label="Loading your basket" /> : !items.length ? <EmptyState icon={ShoppingBag} title="Your cart is empty" message="Add fresh picks from the shop and they’ll appear here." action="Find fresh picks" /> : <div className="cart-layout"><div className="cart-lines">{items.filter((item) => item.product).map(({ product, quantity: amount }) => <article className="cart-line" key={product._id}><Link to={`/product/${product._id}`} className="cart-line-image"><ProductImage product={product} /></Link><div className="cart-line-details"><Link to={`/product/${product._id}`}><strong>{product.name}</strong></Link><span>{formatPrice(product.price)} / {product.unit}</span><div className="cart-line-bottom"><QuantitySelector value={amount} onChange={(value) => quantity(product._id, value)} max={Math.max(1, product.stock)} compact /><strong>{formatPrice(product.price * amount)}</strong></div></div><button type="button" className="icon-button remove-item" aria-label={`Remove ${product.name}`} disabled={busy} onClick={() => remove(product._id)}><Trash2 size={17} /></button></article>)}<div className="delivery-note"><Truck size={18} /><span>{total >= FREE_DELIVERY_MIN ? 'Free delivery unlocked.' : `Add ${formatPrice(FREE_DELIVERY_MIN - total)} more for free delivery.`}</span><Link to="/shop">Add more</Link></div></div><aside className="summary-panel"><h2>Order summary</h2><PriceSummary subtotal={total}><Link className="button button-primary button-full" to="/checkout">Proceed to Checkout<ArrowRight size={16} /></Link></PriceSummary></aside></div>}</section>
+  return <section className="page-container content-page"><div className="page-title-row"><div><span className="eyebrow">YOUR BASKET</span><h1>My Cart <small>{items.length}</small></h1><p>A little freshness is on its way.</p></div><Link className="text-link" to="/shop"><ArrowLeft size={15} /> Continue shopping</Link></div>{cartLoading ? <Loader label="Loading your basket" /> : !items.length ? <EmptyState icon={ShoppingBag} title="Your cart is empty" message="Add fresh picks from the shop and they’ll appear here." action="Find fresh picks" /> : <div className="cart-layout"><div className="cart-lines">{items.filter((item) => item.product).map(({ product, quantity: amount }) => <article className="cart-line" key={product._id}><Link to={`/product/${product._id}`} className="cart-line-image"><ProductImage product={product} /></Link><div className="cart-line-details"><Link to={`/product/${product._id}`}><strong>{product.name}</strong></Link><span>{formatPrice(product.price)} / {product.unit}</span><div className="cart-line-bottom"><QuantitySelector value={amount} onChange={(value) => quantity(product._id, value)} max={Math.max(1, product.stock)} compact /><strong>{formatPrice(product.price * amount)}</strong></div></div><button type="button" className="icon-button remove-item" aria-label={`Remove ${product.name}`} disabled={busy} onClick={() => remove(product._id)}><Trash2 size={17} /></button></article>)}<div className="delivery-note"><Truck size={18} /><span>{!orderSettings.deliveryEnabled ? 'Delivery is currently unavailable.' : total >= orderSettings.freeDeliveryThreshold ? 'Free delivery unlocked.' : `Add ${formatPrice(orderSettings.freeDeliveryThreshold - total)} more for free delivery.`}</span><Link to="/shop">Add more</Link></div></div><aside className="summary-panel"><h2>Order summary</h2><PriceSummary subtotal={total}>{orderSettings.deliveryEnabled ? <Link className="button button-primary button-full" to="/checkout">Proceed to Checkout<ArrowRight size={16} /></Link> : <p className="form-error" role="alert">Delivery is currently unavailable. Please check back later.</p>}</PriceSummary></aside></div>}</section>
 }
 
 export function CheckoutPage() {
   const { items, total, clearCart } = useCart()
+  const orderSettings = useOrderSettings()
   const toast = useToast()
   const navigate = useNavigate()
   const address = useDeliveryAddress()
@@ -42,8 +46,11 @@ export function CheckoutPage() {
   const [dateError, setDateError] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const belowMinimum = total < orderSettings.minimumOrderValue
   async function placeOrder(event) {
     event.preventDefault(); setError('')
+    if (!orderSettings.deliveryEnabled) { setError('Delivery is currently unavailable. Please check back later.'); return }
+    if (belowMinimum) { setError(`Minimum order value is ${formatPrice(orderSettings.minimumOrderValue)}. Add more items to continue.`); return }
     const nextDateError = validateFutureDate(deliveryDate, { minOffset: 0 })
     setDateError(nextDateError)
     if (!address.validate() || nextDateError) { setError('Please fix the highlighted fields.'); return }
@@ -55,11 +62,12 @@ export function CheckoutPage() {
     } catch (requestError) { setError(getApiError(requestError)) } finally { setBusy(false) }
   }
   if (!items.length) return <section className="page-container content-page"><EmptyState icon={ShoppingBag} title="Your cart is empty" message="Choose a few fresh picks before checkout." action="Browse shop" /></section>
-  return <section className="page-container content-page"><div className="page-title-row"><div><span className="eyebrow">ALMOST THERE</span><h1>Checkout</h1><p>Delivery, payment, and then your fresh picks are on their way.</p></div></div><form className="checkout-layout" onSubmit={placeOrder} noValidate><div className="checkout-main"><section className="form-panel"><h2><MapPin size={18} /> Delivery address</h2><AddressPicker state={address} /></section><section className="form-panel"><h2><CalendarDays size={18} /> Delivery schedule</h2><div className="form-grid"><Field label="Delivery Date" required error={dateError}><input className="date-input" type="date" min={localDate()} value={deliveryDate} onChange={(event) => { setDeliveryDate(event.target.value); setDateError('') }} /></Field><TimeSlotField value={timeSlot} onChange={setTimeSlot} /><Field label="Delivery Instructions" optional wide><textarea rows="2" maxLength="300" value={instructions} onChange={(event) => setInstructions(event.target.value)} placeholder="e.g. Ring the bell, leave with security" /></Field></div></section><section className="form-panel"><h2><CreditCard size={18} /> Payment</h2><label className="payment-choice"><input type="radio" checked readOnly /><span><strong>Cash on Delivery</strong><small>Pay when your order arrives. Online payments are coming soon.</small></span></label></section></div><aside className="summary-panel"><h2>Order summary</h2>{items.map(({ product, quantity }) => <div key={product._id}><span>{product.name} × {quantity}</span><strong>{formatPrice(product.price * quantity)}</strong></div>)}<PriceSummary subtotal={total}>{error && <div className="form-error" role="alert">{error}</div>}<button className="button button-primary button-full" disabled={busy}>{busy ? 'Placing order…' : 'Place Order'}<ArrowRight size={16} /></button></PriceSummary></aside></form></section>
+  return <section className="page-container content-page"><div className="page-title-row"><div><span className="eyebrow">ALMOST THERE</span><h1>Checkout</h1><p>Delivery, payment, and then your fresh picks are on their way.</p></div></div>{!orderSettings.deliveryEnabled && <div className="inline-error">Delivery is currently unavailable. Please check back later.</div>}<form className="checkout-layout" onSubmit={placeOrder} noValidate><div className="checkout-main"><section className="form-panel"><h2><MapPin size={18} /> Delivery address</h2><AddressPicker state={address} /></section><section className="form-panel"><h2><CalendarDays size={18} /> Delivery schedule</h2><div className="form-grid"><Field label="Delivery Date" required error={dateError}><input className="date-input" type="date" min={localDate()} value={deliveryDate} onChange={(event) => { setDeliveryDate(event.target.value); setDateError('') }} /></Field><TimeSlotField value={timeSlot} onChange={setTimeSlot} /><Field label="Delivery Instructions" optional wide><textarea rows="2" maxLength="300" value={instructions} onChange={(event) => setInstructions(event.target.value)} placeholder="e.g. Ring the bell, leave with security" /></Field></div></section><section className="form-panel"><h2><CreditCard size={18} /> Payment</h2><label className="payment-choice"><input type="radio" checked readOnly /><span><strong>Cash on Delivery</strong><small>Pay when your order arrives. Online payments are coming soon.</small></span></label></section></div><aside className="summary-panel"><h2>Order summary</h2>{items.map(({ product, quantity }) => <div key={product._id}><span>{product.name} × {quantity}</span><strong>{formatPrice(product.price * quantity)}</strong></div>)}<PriceSummary subtotal={total}>{belowMinimum && orderSettings.deliveryEnabled && <p className="summary-hint">Add {formatPrice(orderSettings.minimumOrderValue - total)} more to reach the {formatPrice(orderSettings.minimumOrderValue)} minimum order.</p>}{error && <div className="form-error" role="alert">{error}</div>}<button className="button button-primary button-full" disabled={busy || !orderSettings.deliveryEnabled || belowMinimum}>{busy ? 'Placing order…' : 'Place Order'}<ArrowRight size={16} /></button></PriceSummary></aside></form></section>
 }
 
 export function PreOrdersPage() {
   const { user } = useAuth()
+  const orderSettings = useOrderSettings()
   const toast = useToast()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -101,12 +109,13 @@ export function PreOrdersPage() {
 
   return <div className="preorder-page"><section className="preorder-hero page-container"><div><span className="eyebrow">A LITTLE PLANNING, A LOT OF FRESH</span><h1>Plan Ahead,<br /><span>Stay Fresh</span></h1><p>Order today and schedule your delivery for the date you need.</p><div className="preorder-steps"><span className="done"><i>1</i>Choose Products</span><span><i>2</i>Select Date</span><span><i>3</i>Confirm Order</span></div></div><div className="preorder-hero-image"><img src="/fruit.jpg" alt="Fresh produce for a planned delivery" /></div></section>
     <section className="page-container preorder-layout"><div className="preorder-products"><div className="section-heading"><div><span className="eyebrow">STEP 1 · PRE-ORDER ITEMS</span><h2>Choose your fresh picks</h2></div></div>{loading ? <Loader /> : error ? <div className="inline-error">{error}</div> : products.length ? <div className="preorder-product-grid">{products.map((product) => <article className={`preorder-product${basket[product._id] ? ' selected' : ''}`} key={product._id}><ProductImage product={product} /><span className="preorder-product-copy"><strong>{product.name}</strong><small>{formatPrice(product.price)} / {product.unit}</small></span>{basket[product._id] ? <QuantitySelector compact min={0} value={basket[product._id]} onChange={(value) => setQuantity(product._id, value)} label={`${product.name} quantity`} /> : <button type="button" className="button button-outline preorder-add" onClick={() => setQuantity(product._id, 1)} aria-label={`Add ${product.name} to pre-order`}><Plus size={15} />Add</button>}</article>)}</div> : <EmptyState title="No pre-order items yet" message="Products with pre-order availability will appear here." />}</div>{summary}</section>
-    {itemCount > 0 && <div className="mobile-checkout-bar"><span><small>{itemCount} {itemCount === 1 ? 'item' : 'items'} · Total</small><strong>{formatPrice(subtotal + deliveryFeeFor(subtotal))}</strong></span><button type="button" className="button button-primary" onClick={continueToConfirm}>{user ? 'Continue' : 'Sign in'}<ArrowRight size={16} /></button></div>}
+    {itemCount > 0 && <div className="mobile-checkout-bar"><span><small>{itemCount} {itemCount === 1 ? 'item' : 'items'} · Total</small><strong>{formatPrice(subtotal + deliveryFeeFor(subtotal, orderSettings))}</strong></span><button type="button" className="button button-primary" onClick={continueToConfirm}>{user ? 'Continue' : 'Sign in'}<ArrowRight size={16} /></button></div>}
     {user && <section className="page-container preorder-history"><div className="form-panel"><span className="eyebrow">ALREADY PLANNED</span><h2>Your scheduled pre-orders</h2>{orders.length ? orders.map((order) => <article className="preorder-row" key={order._id}><Link to={`/orders/${order._id}`}><strong>{order.items.map((item) => `${item.quantity} ${item.unit} ${item.name}`).join(', ')}</strong><small>Delivery {formatDate(order.deliveryDate)}{order.preferredTimeSlot ? ` · ${order.preferredTimeSlot}` : ''} · {formatPrice(order.totalAmount)}</small><span className={`status-pill status-${order.orderStatus}`}>{order.orderStatus.replaceAll('_', ' ')}</span></Link>{order.orderStatus === 'placed' && <button className="icon-button remove-item" onClick={() => cancel(order._id)} aria-label="Cancel pre-order"><Trash2 size={17} /></button>}</article>) : <p className="muted-copy">Upcoming pre-orders will appear here.</p>}</div></section>}
   </div>
 }
 
 function ConfirmPreOrder({ lines, subtotal, onBack, onPlaced }) {
+  const orderSettings = useOrderSettings()
   const address = useDeliveryAddress()
   const [date, setDate] = useState(localDate(1))
   const [timeSlot, setTimeSlot] = useState('')
@@ -114,9 +123,12 @@ function ConfirmPreOrder({ lines, subtotal, onBack, onPlaced }) {
   const [dateError, setDateError] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const fee = deliveryFeeFor(subtotal)
+  const fee = deliveryFeeFor(subtotal, orderSettings)
+  const belowMinimum = subtotal < orderSettings.minimumOrderValue
   async function submit(event) {
     event.preventDefault(); setError('')
+    if (!orderSettings.deliveryEnabled) { setError('Delivery is currently unavailable. Please check back later.'); return }
+    if (belowMinimum) { setError(`Minimum order value is ${formatPrice(orderSettings.minimumOrderValue)}. Add more items to continue.`); return }
     const nextDateError = validateFutureDate(date, { minOffset: 1 })
     setDateError(nextDateError)
     if (!address.validate() || nextDateError) { setError('Please fix the highlighted fields.'); return }
@@ -136,7 +148,7 @@ function ConfirmPreOrder({ lines, subtotal, onBack, onPlaced }) {
     <aside className="summary-panel confirm-summary"><h2>Pre-order summary</h2>
       <dl className="confirm-details"><div><dt><CalendarDays size={15} />Delivery Date</dt><dd>{date && !dateError ? formatDate(date) : 'Choose a date'}</dd></div><div><dt><Clock size={15} />Preferred Time</dt><dd>{timeSlot || 'Any time (optional)'}</dd></div><div><dt><MapPin size={15} />Delivery Address</dt><dd>{address.summary || 'Add your address'}</dd></div></dl>
       <ul className="preorder-lines">{lines.map(({ product, quantity, subtotal: lineTotal }) => <li key={product._id}><ProductImage product={product} /><span className="preorder-line-copy"><strong>{product.name}</strong><small>Quantity: {quantity} {product.unit}</small><small>{formatPrice(product.price)} / {product.unit}</small></span><span className="preorder-line-total"><small>Subtotal</small><strong>{formatPrice(lineTotal)}</strong></span></li>)}</ul>
-      <PriceSummary subtotal={subtotal}>{error && <div className="form-error" role="alert">{error}</div>}<button className="button button-primary button-full" disabled={busy}>{busy ? 'Confirming…' : `Confirm Pre-Order · ${formatPrice(subtotal + fee)}`}<CheckCircle2 size={17} /></button></PriceSummary>
+      <PriceSummary subtotal={subtotal}>{!orderSettings.deliveryEnabled && <div className="inline-error">Delivery is currently unavailable. Please check back later.</div>}{belowMinimum && orderSettings.deliveryEnabled && <p className="summary-hint">Add {formatPrice(orderSettings.minimumOrderValue - subtotal)} more to reach the {formatPrice(orderSettings.minimumOrderValue)} minimum order.</p>}{error && <div className="form-error" role="alert">{error}</div>}<button className="button button-primary button-full" disabled={busy || !orderSettings.deliveryEnabled || belowMinimum}>{busy ? 'Confirming…' : `Confirm Pre-Order · ${formatPrice(subtotal + fee)}`}<CheckCircle2 size={17} /></button></PriceSummary>
     </aside></form></section>
 }
 

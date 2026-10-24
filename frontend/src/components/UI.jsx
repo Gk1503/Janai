@@ -27,9 +27,10 @@ export function ProductImage({ product, alt = product?.name || '', ...props }) {
 }
 
 export const formatPrice = (value) => `₹${Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
-// Mirrors the backend rule in orderController: ₹25 delivery below ₹500, free above.
-export const FREE_DELIVERY_MIN = 500
-export const deliveryFeeFor = (subtotal) => (!subtotal || subtotal >= FREE_DELIVERY_MIN ? 0 : 25)
+// rules comes from useOrderSettings() — the saved Orders & Delivery settings (backend/utils/orderPricing.js
+// computes the authoritative fee the same way at order-creation time). Disabled delivery is handled by the
+// caller (it blocks checkout outright), not folded into this as a 0 fee.
+export const deliveryFeeFor = (subtotal, rules) => (!subtotal || subtotal >= rules.freeDeliveryThreshold ? 0 : rules.deliveryFee)
 
 export function Loader({ label = 'Loading Janai' }) { return <div className="loading-state"><span className="spinner" />{label}</div> }
 
