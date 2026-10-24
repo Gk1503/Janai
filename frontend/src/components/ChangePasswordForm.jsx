@@ -3,6 +3,7 @@ import { Eye, EyeOff, KeyRound } from 'lucide-react'
 import api, { getApiError } from '../services/api'
 import { useAuth, useToast } from '../context/AppContexts'
 import { Field } from './Forms'
+import { registerSettingsFormGuard, useBeforeUnloadWarning } from '../hooks/useSettingsFormGuard'
 
 // Mirrors the backend rule in controllers/authController.js (changePassword) exactly — the backend stays
 // authoritative and nothing stronger is invented here, so the form can never reject a password the API
@@ -50,7 +51,7 @@ function PasswordField({ label, name, value, onChange, error, autoComplete, hint
  * Passwords live in component state only for the duration of the request: never written to
  * localStorage/sessionStorage, never put in a URL, and never logged.
  */
-export default function ChangePasswordForm() {
+export default function ChangePasswordForm({ formGuardRef } = {}) {
   const { refreshUser } = useAuth()
   const toast = useToast()
   const [form, setForm] = useState(blankForm())
@@ -58,18 +59,24 @@ export default function ChangePasswordForm() {
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
 
+  // There is nothing to "load" here (a password can never be read back), so the baseline is simply
+  // blank: any character typed into any of the three fields is an edit not yet saved, and clearing them
+  // back to blank — or a successful submit, which also resets to blank — is clean again.
+  const dirty = JSON.stringify(form) !== JSON.stringify(blankForm())
+  useBeforeUnloadWarning(dirty)
+  registerSettingsFormGuard(formGuardRef, { dirty, saving, save: doSave })
+
   function set(key, value) {
     setForm((current) => ({ ...current, [key]: value }))
     setErrors((current) => ({ ...current, [key]: '' }))
     setError('')
   }
 
-  async function submit(event) {
-    event.preventDefault()
-    if (saving) return
+  async function doSave() {
+    if (saving) return false
     const nextErrors = validateChangePasswordForm(form)
     setErrors(nextErrors)
-    if (Object.keys(nextErrors).length) return
+    if (Object.keys(nextErrors).length) return false
     setSaving(true)
     try {
       const { data } = await api.post('/auth/change-password', form)
@@ -81,14 +88,17 @@ export default function ChangePasswordForm() {
       // stays valid — the session is not invalidated by a password change, so no re-login is needed.
       await refreshUser()
       toast(data?.message || 'Password updated.')
+      return true
     } catch (requestError) {
       // getApiError surfaces the backend's own message ("Your current password is incorrect.",
       // "Choose a password different from your current one.", …). The submitted values are never logged.
       setError(getApiError(requestError))
+      return false
     } finally {
       setSaving(false)
     }
   }
+  function submit(event) { event.preventDefault(); doSave() }
 
   const incomplete = !form.currentPassword || !form.newPassword || !form.confirmPassword
 
