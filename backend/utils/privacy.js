@@ -35,6 +35,30 @@ export function maskOrder(order, viewer) {
   return masked;
 }
 
+// Rider-only exception to maskOrder, used solely by the rider-facing endpoints in deliveryController.js
+// (listMyDeliveryOrders / updateMyDeliveryOrderStatus). A delivery staff member needs the real customer
+// phone number to actually complete a delivery, even without customers:view_contact — but only for the
+// exact order currently assigned to them. This never grants it globally: maskOrder itself is untouched,
+// every other caller (admin delivery listing, admin orders, bulk orders, etc.) keeps masking exactly as
+// before, and this function re-checks the assignment itself rather than trusting the caller to have
+// filtered correctly, so reusing it anywhere else can never leak a phone number by accident. Email is
+// deliberately left masked — only the phone, which is what a delivery actually requires, is revealed.
+export function maskOrderForAssignedRider(order, viewer) {
+  const masked = maskOrder(order, viewer);
+  if (!masked || !viewer?._id) return masked;
+  const assignedId = masked.assignedDeliveryStaff && typeof masked.assignedDeliveryStaff === 'object'
+    ? masked.assignedDeliveryStaff._id
+    : masked.assignedDeliveryStaff;
+  if (!assignedId || String(assignedId) !== String(viewer._id)) return masked;
+  const plain = toPlain(order);
+  const revealed = { ...masked };
+  if (revealed.deliveryAddress) revealed.deliveryAddress = { ...revealed.deliveryAddress, phone: plain.deliveryAddress?.phone };
+  if (revealed.user && typeof revealed.user === 'object' && !Array.isArray(revealed.user) && 'phone' in revealed.user) {
+    revealed.user = { ...revealed.user, phone: plain.user?.phone };
+  }
+  return revealed;
+}
+
 export function maskBulkOrder(request, viewer) {
   const plain = toPlain(request);
   if (!shouldMaskContact(viewer) || !plain) return plain;

@@ -1,12 +1,16 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import AdminComingSoon from './components/AdminComingSoon'
 import AdminLayout from './components/AdminLayout'
+import DeliveryLayout from './components/DeliveryLayout'
+import DeliveryProtectedRoute from './components/DeliveryProtectedRoute'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
 import RequirePermission from './components/RequirePermission'
 import ScrollToTop from './components/ScrollToTop'
 import { AuthProvider, CartProvider, ToastProvider } from './context/AppContexts'
 import AdminHomePage from './pages/AdminHomePage'
+import DeliveryDashboardPage from './pages/DeliveryDashboardPage'
+import DeliveryLoginPage from './pages/DeliveryLoginPage'
 import AdminStaffPage from './pages/AdminStaffPage'
 import AdminDeliveryStaffPage from './pages/AdminDeliveryStaffPage'
 import AdminDeliveryManagementPage from './pages/AdminDeliveryManagementPage'
@@ -46,6 +50,13 @@ export default function App() {
       <Route path="404" element={<NotFoundPage />} />
       <Route path="*" element={<NotFoundPage />} />
     </Route>
+    <Route path="delivery/login" element={<DeliveryLoginPage />} />
+    <Route element={<DeliveryProtectedRoute />}>
+      <Route element={<DeliveryLayout />}>
+        <Route path="delivery" element={<DeliveryDashboardPage />} />
+      </Route>
+    </Route>
+
     <Route path="admin/login" element={<AdminLoginPage />} />
     <Route element={<ProtectedRoute admin />}>
       <Route element={<AdminLayout />}>

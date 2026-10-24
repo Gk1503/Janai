@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft, CalendarDays, CircleUserRound, Heart, Home, Leaf, Menu, Package, Search, ShoppingBag, ShoppingCart, X } from 'lucide-react'
 import { useAuth, useCart } from '../context/AppContexts'
-import { hasPanelAccess } from '../utils/permissions'
+import { hasPanelAccess, homeRedirectFor } from '../utils/permissions'
 
 const navItems = [
   { to: '/', label: 'Home', icon: Home, end: true },
@@ -67,7 +67,9 @@ function Footer() {
 export default function Layout() {
   const { pathname } = useLocation()
   const { user } = useAuth()
-  if (hasPanelAccess(user)) return <Navigate to="/admin" replace />
+  // Delivery-only staff land on their own portal; the owner and any staff with other admin-panel
+  // access keep going to /admin exactly as before (homeRedirectFor handles the split).
+  if (hasPanelAccess(user)) return <Navigate to={homeRedirectFor(user)} replace />
   const authPage = ['/login', '/register'].includes(pathname)
   return <div className="app-shell">{!authPage && <Navbar />}<main><Outlet /></main>{!authPage && <Footer />}{!authPage && <MobileBottomNav />}</div>
 }

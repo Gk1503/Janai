@@ -86,6 +86,23 @@ export const PERMISSION_GROUPS = [
 export const isOwnerAccount = (user) => user?.role === 'admin' && user.isActive !== false
 export const hasPanelAccess = (user) => Boolean(user) && ['admin', 'staff'].includes(user.role) && user.isActive !== false
 
+// A staff account eligible for the delivery (rider) portal — mirrors the backend's eligibility rule for
+// delivery OTP login (role 'staff', active, holds delivery:view). effectivePermissions already returns
+// an empty set for a deactivated account, so isActive needs no separate check here.
+export const isDeliveryStaff = (user) => Boolean(user) && user.role === 'staff' && effectivePermissions(user).has('delivery:view')
+
+const DELIVERY_ONLY_PERMISSIONS = new Set(['delivery:view', 'delivery:update'])
+
+// A staff account whose only real capability is the delivery portal — it holds delivery:view and
+// nothing else admin-panel-worthy. This decides where "/" sends an already-signed-in panel user; it
+// grants no permission and is never consulted by any actual access check.
+export const isDeliveryOnlyStaff = (user) => isDeliveryStaff(user) && [...effectivePermissions(user)].every((permission) => DELIVERY_ONLY_PERMISSIONS.has(permission))
+
+// Where an authenticated owner/staff account should land when it opens the customer-facing site ("/").
+// Delivery-only staff go to their own portal; the owner and every other staff account (including one
+// with zero permissions) keep going to /admin, unchanged from before.
+export const homeRedirectFor = (user) => (isDeliveryOnlyStaff(user) ? '/delivery' : '/admin')
+
 // The permissions this user effectively holds: all for the owner, none for customers or a missing user.
 export function effectivePermissions(user) {
   if (!user || user.isActive === false) return new Set()

@@ -70,6 +70,13 @@ export function AuthProvider({ children }) {
     return saveSession(data)
   }
 
+  // Delivery staff sign-in: same session mechanism as every other login (saveSession -> the one shared
+  // janai_token + user state), just a different verify endpoint. No second token or session system.
+  async function loginWithDeliveryOtp(credentials) {
+    const { data } = await api.post('/auth/verify-delivery-otp', credentials)
+    return saveSession(data)
+  }
+
   async function register(values) {
     const { data } = await api.post('/auth/register', values)
     return saveSession(data)
@@ -86,7 +93,7 @@ export function AuthProvider({ children }) {
     setUser(null)
   }
 
-  return <AuthContext.Provider value={{ user, setUser, authLoading, login, adminLogin, loginWithOtp, register, updateProfile, logout, refreshUser, can, isOwner, hasPanelAccess: panelAccess }}>{children}</AuthContext.Provider>
+  return <AuthContext.Provider value={{ user, setUser, authLoading, login, adminLogin, loginWithOtp, loginWithDeliveryOtp, register, updateProfile, logout, refreshUser, can, isOwner, hasPanelAccess: panelAccess }}>{children}</AuthContext.Provider>
 }
 
 export function CartProvider({ children }) {

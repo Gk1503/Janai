@@ -1262,3 +1262,73 @@ h3 { font-size: 16px; }
 .adm-password-row { display: flex; align-items: center; gap: 8px; }
 .adm-password-row input { flex: 1 1 auto; }
 @media (max-width: 760px) { .adm-perm-grid { grid-template-columns: minmax(0, 1fr); } .adm-password-row { flex-wrap: wrap; } }
+
+/* ------------------------------------------------------------------ */
+/* Delivery (rider) portal — written mobile-first since this is a      */
+/* fresh, self-contained component tree with nothing else depending   */
+/* on its cascade order.                                               */
+/* ------------------------------------------------------------------ */
+.rider-shell { display: flex; min-height: 100vh; flex-direction: column; background: var(--page); }
+.rider-shell-centered { display: grid; place-items: center; padding: 24px; }
+
+.rider-header { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 10px; min-height: 60px; padding: 10px 14px; border-bottom: 1px solid var(--line); background: rgba(255, 255, 255, .97); backdrop-filter: blur(10px); }
+.rider-logo { height: 34px; }
+.rider-header-identity { display: flex; align-items: center; gap: 8px; min-width: 0; margin-left: 6px; }
+.rider-avatar { display: grid; flex: 0 0 auto; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--light-green); color: var(--green); font: 800 12px Manrope, sans-serif; }
+.rider-header-text { display: flex; min-width: 0; flex-direction: column; overflow: hidden; }
+.rider-header-text strong { overflow: hidden; color: var(--ink); font-size: 13px; white-space: nowrap; text-overflow: ellipsis; }
+.rider-header-text small { color: var(--muted); font-size: 11px; }
+.rider-logout { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; margin-left: auto; padding: 8px 12px; border: 1px solid var(--line); border-radius: 9px; background: #fff; color: var(--ink); font-size: 13px; font-weight: 700; }
+.rider-logout:hover { color: var(--danger); border-color: #e3bcb6; }
+.rider-logout span { display: none; }
+.rider-main { flex: 1; width: min(900px, calc(100% - 28px)); margin-inline: auto; padding-block: 18px 40px; }
+
+/* Login screen */
+.rider-auth-page { display: grid; min-height: 100vh; place-items: center; padding: 24px 16px; background: var(--page); }
+.rider-auth-card { width: min(420px, 100%); padding: 28px 22px; border: 1px solid var(--line); border-radius: 16px; background: #fff; box-shadow: var(--shadow); text-align: center; }
+.rider-auth-logo { height: 40px; margin-inline: auto; }
+.rider-auth-eyebrow { justify-content: center; width: 100%; margin-top: 16px; }
+.rider-auth-title { margin-top: 10px; font-size: 24px; }
+.rider-auth-description { margin-top: 8px; color: var(--muted); font-size: 13.5px; }
+.rider-auth-card .auth-form { margin-top: 20px; text-align: left; }
+.rider-auth-card .field { text-align: left; }
+.rider-auth-footer { margin-top: 18px; color: var(--muted); font-size: 13px; }
+.rider-auth-footer a { color: var(--green); font-weight: 700; }
+
+/* Dashboard */
+.rider-dashboard-head { margin-bottom: 14px; }
+.rider-dashboard-head p { margin-top: 4px; color: var(--muted); font-size: 13.5px; }
+.rider-permissions { margin-bottom: 14px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: #fff; }
+/* Direct-child combinator, not a descendant selector: the permission-detail popup (PermissionDetailModal)
+   renders inside this same <section>, and its own <h2> title must not inherit this heading's style. */
+.rider-permissions > h2 { font: 800 11px Manrope, sans-serif; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.rider-permission-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.rider-permission-pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; border: 0; border-radius: 99px; background: var(--light-green); color: var(--green); font-size: 12.5px; font-weight: 700; font-family: inherit; transition: background .15s, transform .15s; }
+.rider-permission-pill:hover { background: var(--sage-strong); }
+.rider-permission-pill:active { transform: translateY(1px); }
+.rider-permission-code { margin-top: 6px; color: var(--muted); font-size: 13px; }
+.rider-permission-code code { padding: 2px 6px; border-radius: 6px; background: var(--light-green); color: var(--green); font-size: 12.5px; }
+.rider-order-grid { display: grid; grid-template-columns: 1fr; gap: 14px; margin-top: 14px; }
+.rider-order-card { display: grid; gap: 10px; }
+.rider-card-customer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.rider-card-customer strong { font-size: 15px; }
+.rider-call-link { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 99px; background: var(--light-green); color: var(--green); font-size: 13px; font-weight: 800; }
+.rider-card-address { display: flex; gap: 8px; color: var(--ink); }
+.rider-card-address svg { flex: 0 0 auto; margin-top: 2px; color: var(--muted); }
+.rider-card-address-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: 13.5px; }
+.rider-card-address-text small { color: var(--muted); font-size: 12.5px; overflow-wrap: anywhere; }
+.rider-instructions { font-style: italic; }
+.rider-card-meta { display: flex; flex-wrap: wrap; gap: 14px; color: var(--muted); font-size: 13px; }
+.rider-card-meta span { display: inline-flex; align-items: center; gap: 6px; }
+.rider-card-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
+.rider-card-actions .button { flex: 1 1 160px; }
+
+@media (min-width: 520px) {
+  .rider-logout span { display: inline; }
+}
+@media (min-width: 700px) {
+  .rider-order-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 1100px) {
+  .rider-order-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
