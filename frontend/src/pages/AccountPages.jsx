@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowLeft, ArrowRight, CalendarDays, Check, Leaf, Mail, MapPin, Phone, Sprout, Truck } from 'lucide-react'
+import { ArrowLeft, ArrowRight, CalendarDays, Check, Clock, Leaf, Mail, MapPin, Phone, Sprout, Truck } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import api, { getApiError } from '../services/api'
 import { useAuth, useToast } from '../context/AppContexts'
-import { useBusinessSettings } from '../hooks/useBusinessSettings'
+import { DEFAULTS, formatBusinessAddress, formatOperatingHours, useBusinessSettings } from '../hooks/useBusinessSettings'
 import { hasPanelAccess } from '../utils/permissions'
 import { Field, PhoneInput } from '../components/Forms'
 import { hasErrors, validateEmail, validateMobile, validateName, validateRequired } from '../utils/validation'
@@ -11,7 +11,17 @@ import { hasErrors, validateEmail, validateMobile, validateName, validateRequire
 const authCategories = [['Fruits', '/fruit.jpg'], ['Vegetables', '/Vegatables.png'], ['Groceries', '/grocery.jpg']]
 
 export function AuthFrame({ eyebrow, title, description, children, footer, standalone = false }) {
-  return <section className="auth-page"><aside className="auth-photo"><img src="/Vegatables.png" alt="" aria-hidden="true" /><div className="auth-photo-copy"><span className="eyebrow"><Leaf size={14} />FRESH · LOCAL · DELIVERED</span><h2>Fresh fruits, vegetables &amp; groceries — at your doorstep.</h2><div className="auth-chips">{authCategories.map(([label, image]) => <span key={label}><img src={image} alt="" />{label}</span>)}</div><ul><li><Truck size={16} />Delivery on the date you choose</li><li><CalendarDays size={16} />Pre-order for later in a few taps</li><li><Sprout size={16} />Bulk orders for businesses &amp; events</li></ul></div></aside><div className="auth-panel">{!standalone && <Link className="auth-back" to="/"><ArrowLeft size={16} />Back to Home</Link>}<div className="auth-panel-inner">{standalone ? <div className="auth-logo"><img src="/Janai-logo.jpg" alt="Janai" /></div> : <Link className="auth-logo" to="/" aria-label="Janai home"><img src="/Janai-logo.jpg" alt="Janai, Fruits Vegetables Groceries" /></Link>}<span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p className="auth-description">{description}</p>{children}{footer && <div className="auth-footer">{footer}</div>}</div></div></section>
+  // Same shared fetch/cache every other branded surface uses — not the Navbar/Footer/admin-sidebar
+  // <Logo> component itself, because .auth-logo is a differently-shaped box (width-based, no fixed
+  // aspect-ratio crop) than .brand-logo; reusing <Logo>'s markup here would change this page's existing
+  // sizing. The data and fallback behaviour are identical; only the box/markup stays page-specific.
+  const { businessName, logo } = useBusinessSettings()
+  const [brokenLogo, setBrokenLogo] = useState(false)
+  const useCustomLogo = Boolean(logo) && !brokenLogo
+  const name = businessName || DEFAULTS.businessName
+  const logoSrc = useCustomLogo ? logo : '/Janai-logo.jpg'
+  const onLogoError = () => setBrokenLogo(true)
+  return <section className="auth-page"><aside className="auth-photo"><img src="/Vegatables.png" alt="" aria-hidden="true" /><div className="auth-photo-copy"><span className="eyebrow"><Leaf size={14} />FRESH · LOCAL · DELIVERED</span><h2>Fresh fruits, vegetables &amp; groceries — at your doorstep.</h2><div className="auth-chips">{authCategories.map(([label, image]) => <span key={label}><img src={image} alt="" />{label}</span>)}</div><ul><li><Truck size={16} />Delivery on the date you choose</li><li><CalendarDays size={16} />Pre-order for later in a few taps</li><li><Sprout size={16} />Bulk orders for businesses &amp; events</li></ul></div></aside><div className="auth-panel">{!standalone && <Link className="auth-back" to="/"><ArrowLeft size={16} />Back to Home</Link>}<div className="auth-panel-inner">{standalone ? <div className="auth-logo"><img src={logoSrc} alt={useCustomLogo ? name : 'Janai'} className={useCustomLogo ? 'is-custom-logo' : undefined} onError={onLogoError} /></div> : <Link className="auth-logo" to="/" aria-label={`${name} home`}><img src={logoSrc} alt={useCustomLogo ? name : 'Janai, Fruits Vegetables Groceries'} className={useCustomLogo ? 'is-custom-logo' : undefined} onError={onLogoError} /></Link>}<span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p className="auth-description">{description}</p>{children}{footer && <div className="auth-footer">{footer}</div>}</div></div></section>
 }
 
 export function LoginPage() {
@@ -128,9 +138,19 @@ export function AboutPage() {
 
 const contactSubjects = ['General question', 'Order support', 'Delivery issue', 'Pre-orders', 'Bulk orders', 'Product quality', 'Feedback & suggestions']
 
+// The saved number is normalised to 10 digits by the backend, so this only adds readable spacing
+// (matching how the number was previously written out) and leaves anything unexpected untouched.
+function formatSavedPhone(phone) {
+  return /^\d{10}$/.test(phone) ? `${phone.slice(0, 5)} ${phone.slice(5)}` : phone
+}
+
 export function ContactPage() {
   const toast = useToast()
-  const { businessName } = useBusinessSettings()
+  // Saved contact details come from the same public GET /api/settings/general as the business name,
+  // through the one shared cache — no extra request, and no owner-only settings are fetched here.
+  const { businessName, phone, email, address, operatingHours } = useBusinessSettings()
+  const addressText = formatBusinessAddress(address)
+  const hourRows = formatOperatingHours(operatingHours)
   const [form, setForm] = useState({ name: '', email: '', phone: '', subject: 'General question', message: '' })
   const [errors, setErrors] = useState({})
   const [busy, setBusy] = useState(false)
@@ -144,7 +164,7 @@ export function ContactPage() {
     setBusy(true)
     try { const { data } = await api.post('/contact', form); toast(data.message || 'Message sent.'); setForm({ name: '', email: '', phone: '', subject: 'General question', message: '' }) } catch (requestError) { setError(getApiError(requestError)) } finally { setBusy(false) }
   }
-  return <section className="page-container contact-page"><div className="page-title-row"><div><span className="eyebrow">WE’RE HERE TO HELP</span><h1>Contact {businessName}</h1></div></div><div className="contact-layout"><form className="contact-form" onSubmit={submit} noValidate><div className="form-grid"><Field label="Name" required error={errors.name}><input autoComplete="name" value={form.name} onChange={(event) => set('name', event.target.value)} /></Field><Field label="Email" required error={errors.email}><input type="email" inputMode="email" autoComplete="email" value={form.email} onChange={(event) => set('email', event.target.value.trim())} placeholder="you@example.com" /></Field><Field label="Mobile Number" optional error={errors.phone}><PhoneInput value={form.phone} onChange={(value) => set('phone', value)} invalid={Boolean(errors.phone)} /></Field><Field label="Subject" required><select value={form.subject} onChange={(event) => set('subject', event.target.value)}>{contactSubjects.map((subject) => <option key={subject} value={subject}>{subject}</option>)}</select></Field><Field label="Message" required wide error={errors.message}><textarea rows="4" maxLength="2000" value={form.message} onChange={(event) => set('message', event.target.value)} placeholder="How can we help?" /></Field></div>{error && <div className="form-error">{error}</div>}<button className="button button-primary" disabled={busy}>{busy ? 'Sending…' : 'Send message'}<ArrowRight size={16} /></button></form><aside className="contact-aside"><h2>Need a hand?</h2><p><Phone size={16} /> +91 98765 43210</p><p><Mail size={16} /> hello@janai.in</p><p><MapPin size={16} /> Serving local homes and businesses</p></aside></div></section>
+  return <section className="page-container contact-page"><div className="page-title-row"><div><span className="eyebrow">WE’RE HERE TO HELP</span><h1>Contact {businessName}</h1></div></div><div className="contact-layout"><form className="contact-form" onSubmit={submit} noValidate><div className="form-grid"><Field label="Name" required error={errors.name}><input autoComplete="name" value={form.name} onChange={(event) => set('name', event.target.value)} /></Field><Field label="Email" required error={errors.email}><input type="email" inputMode="email" autoComplete="email" value={form.email} onChange={(event) => set('email', event.target.value.trim())} placeholder="you@example.com" /></Field><Field label="Mobile Number" optional error={errors.phone}><PhoneInput value={form.phone} onChange={(value) => set('phone', value)} invalid={Boolean(errors.phone)} /></Field><Field label="Subject" required><select value={form.subject} onChange={(event) => set('subject', event.target.value)}>{contactSubjects.map((subject) => <option key={subject} value={subject}>{subject}</option>)}</select></Field><Field label="Message" required wide error={errors.message}><textarea rows="4" maxLength="2000" value={form.message} onChange={(event) => set('message', event.target.value)} placeholder="How can we help?" /></Field></div>{error && <div className="form-error">{error}</div>}<button className="button button-primary" disabled={busy}>{busy ? 'Sending…' : 'Send message'}<ArrowRight size={16} /></button></form><aside className="contact-aside"><h2>Need a hand?</h2>{phone && <p><Phone size={16} /> <a href={`tel:+91${phone}`}>+91 {formatSavedPhone(phone)}</a></p>}{email && <p><Mail size={16} /> <a href={`mailto:${email}`}>{email}</a></p>}<p className="contact-aside-address"><MapPin size={16} /> <span>{addressText || 'Serving local homes and businesses'}</span></p><div className="contact-hours"><p><Clock size={16} /> <strong>Store hours</strong></p>{hourRows.length ? <dl>{hourRows.map((row) => <div key={row.days}><dt>{row.days}</dt><dd>{row.hours}</dd></div>)}</dl> : <small className="contact-hours-empty">Operating hours not available.</small>}</div></aside></div></section>
 }
 
 export function AdminLoginPage() {

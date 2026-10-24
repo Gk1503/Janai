@@ -5,6 +5,7 @@ import { useToast } from '../context/AppContexts'
 import { Loader } from './UI'
 import { Field, PhoneInput } from './Forms'
 import { MAX_IMAGE_BYTES, readImageAsDataUrl } from './ProductFormModal'
+import { invalidateBusinessSettings } from '../hooks/useBusinessSettings'
 
 export const DAYS = [
   ['monday', 'Monday'], ['tuesday', 'Tuesday'], ['wednesday', 'Wednesday'], ['thursday', 'Thursday'],
@@ -106,6 +107,9 @@ export default function GeneralSettingsForm() {
       const next = toForm(data.settings)
       setSaved(next)
       setForm(next)
+      // The public storefront (Navbar/Footer/Contact) caches these values per tab; drop that cache so
+      // the next public page load reflects what was just saved rather than stale data.
+      invalidateBusinessSettings()
       toast(data.message || 'Settings saved.')
     } catch (requestError) {
       toast(getApiError(requestError), 'error')

@@ -305,6 +305,9 @@ h3 { font-size: 16px; }
 .auth-panel-inner { width: min(100%,420px); margin: 22px auto; }
 .auth-logo { display: block; width: 240px; max-width: 100%; margin-bottom: 14px; }
 .auth-logo img { display: block; width: 100%; height: auto; object-fit: contain; mix-blend-mode: multiply; filter: brightness(1.06) contrast(1.05); }
+/* The multiply blend + filter above are tuned to the bundled JPG's white background; a saved custom
+   logo (any uploaded image) must render as-is instead of being blended/filtered unpredictably. */
+.auth-logo img.is-custom-logo { mix-blend-mode: normal; filter: none; }
 .auth-panel h1 { margin-top: 7px; font-size: 30px; }
 .auth-description { margin-block: 6px 18px; color: var(--muted); font-size: 15px; }
 .auth-form { display: grid; gap: 14px; }
@@ -540,6 +543,20 @@ h3 { font-size: 16px; }
 .contact-aside h2 { margin-bottom: 10px; font-size: 18px; }
 .contact-aside p { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 14px; }
 .contact-aside svg { flex: 0 0 auto; color: var(--green); }
+/* Tappable phone/email, same treatment as the .contact-card links on the same sage background. */
+.contact-aside a { color: var(--green); }
+.contact-aside a:hover { text-decoration: underline; }
+/* A saved address can wrap to several lines, so its icon aligns to the first line instead of centring. */
+.contact-aside-address { align-items: flex-start; }
+.contact-aside-address svg { margin-top: 3px; }
+/* Saved operating hours (display only). Each row wraps instead of overflowing on a narrow phone, and
+   min-width: 0 lets the day/time text shrink rather than forcing the card wider than the viewport. */
+.contact-hours { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.contact-hours dl { display: grid; gap: 6px; margin-top: 8px; }
+.contact-hours dl > div { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; font-size: 13.5px; }
+.contact-hours dt { min-width: 0; color: var(--muted); font-weight: 700; }
+.contact-hours dd { min-width: 0; text-align: right; }
+.contact-hours-empty { color: var(--muted); font-size: 13px; }
 .not-found { display: flex; min-height: 55vh; flex-direction: column; align-items: flex-start; justify-content: center; }
 .not-found h1 { max-width: 600px; margin-block: 9px; font-size: 36px; }
 .not-found p { max-width: 400px; margin-bottom: 15px; color: var(--muted); font-size: 15px; }
@@ -1374,6 +1391,16 @@ h3 { font-size: 16px; }
 .adm-hours-times input[type='time'] { min-height: 38px; padding: 6px 8px; border: 1px solid #d9e3d4; border-radius: 8px; font-size: 13px; }
 .adm-hours-closed { grid-column: 2; justify-self: end; }
 .adm-hours-error { grid-column: 1 / -1; color: var(--danger); }
+/* SMS notification rows reuse .adm-hours-row; the per-event description sits under its switch rather
+   than in the row's second column, which is sized for the compact time inputs. */
+.adm-notify-desc { grid-column: 1 / -1; line-height: 1.5; }
+.adm-settings-note { display: flex; align-items: flex-start; gap: 8px; line-height: 1.6; }
+.adm-settings-note svg { flex: 0 0 auto; margin-top: 2px; }
+/* A subsection used as the first child of a panel has no preceding content to divide. */
+.adm-settings-first { padding-top: 0; border-top: 0; }
+/* Credential fields read better in one column than in the two-column .form-grid, and stay narrow
+   enough to scan on a wide screen. Already single-column below 760px via .form-grid's own rule. */
+.adm-password-form .form-grid { grid-template-columns: minmax(0, 1fr); max-width: 420px; }
 .adm-settings-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
 
 @media (max-width: 560px) {

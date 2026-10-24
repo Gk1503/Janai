@@ -3,6 +3,7 @@ import Order from '../models/Order.js';
 import User from '../models/User.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import { DELIVERY_ELIGIBLE_STATUSES, DELIVERY_TRANSITIONS, hasPermission, orderTypeCondition } from '../config/permissions.js';
+import { dispatchStatusNotification } from '../utils/orderNotifications.js';
 import { maskOrder, maskOrderForAssignedRider } from '../utils/privacy.js';
 import { buildStatusEntry, statusUpdateWithAudit, withPresentedHistory } from '../utils/statusAudit.js';
 
@@ -102,5 +103,8 @@ export const updateMyDeliveryOrderStatus = asyncHandler(async (req, res) => {
     { new: true, runValidators: true },
   ).select('+statusHistory').populate('user', 'firstName lastName email phone').populate('assignedDeliveryStaff', 'firstName lastName adminId');
   if (!order) return res.status(409).json({ message: 'This order was just updated by someone else. Refresh and try again.' });
+  // Past the assigned-rider check and the conditional update, so the transition genuinely happened and
+  // only the winning request notifies. Fire-and-forget: an SMS failure can never undo this transition.
+  dispatchStatusNotification(order);
   res.json({ order: withPresentedHistory(maskOrderForAssignedRider(order, req.user), req.user, true) });
 });

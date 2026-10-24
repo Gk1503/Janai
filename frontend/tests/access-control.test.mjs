@@ -54,6 +54,8 @@ before(async () => {
     PermissionGrid: (await server.ssrLoadModule('/src/components/PermissionGrid.jsx')).default,
     DeliveryProtectedRoute: (await server.ssrLoadModule('/src/components/DeliveryProtectedRoute.jsx')).default,
     DeliveryLayout: (await server.ssrLoadModule('/src/components/DeliveryLayout.jsx')).default,
+    DeliveryLoginPage: (await server.ssrLoadModule('/src/pages/DeliveryLoginPage.jsx')).default,
+    AuthFrame: (await server.ssrLoadModule('/src/pages/AccountPages.jsx')).AuthFrame,
     DeliveryDashboardPage: (await server.ssrLoadModule('/src/pages/DeliveryDashboardPage.jsx')).default,
     DeliveryCard: (await server.ssrLoadModule('/src/pages/DeliveryDashboardPage.jsx')).DeliveryCard,
     ConfirmDeliveredModal: (await server.ssrLoadModule('/src/pages/DeliveryDashboardPage.jsx')).ConfirmDeliveredModal,
@@ -69,6 +71,9 @@ before(async () => {
     loadBusinessSettings: (await server.ssrLoadModule('/src/hooks/useBusinessSettings.js')).loadBusinessSettings,
     resetBusinessSettingsCache: (await server.ssrLoadModule('/src/hooks/useBusinessSettings.js')).__resetBusinessSettingsCacheForTests,
     BUSINESS_SETTINGS_DEFAULTS: (await server.ssrLoadModule('/src/hooks/useBusinessSettings.js')).DEFAULTS,
+    invalidateBusinessSettings: (await server.ssrLoadModule('/src/hooks/useBusinessSettings.js')).invalidateBusinessSettings,
+    formatBusinessAddress: (await server.ssrLoadModule('/src/hooks/useBusinessSettings.js')).formatBusinessAddress,
+    formatOperatingHours: (await server.ssrLoadModule('/src/hooks/useBusinessSettings.js')).formatOperatingHours,
     AdminSettingsPage: (await server.ssrLoadModule('/src/pages/AdminSettingsPage.jsx')).default,
     AdminAccountPage: (await server.ssrLoadModule('/src/pages/AdminAccountPage.jsx')).default,
     DeliverySettingsPage: (await server.ssrLoadModule('/src/pages/DeliverySettingsPage.jsx')).default,
@@ -78,6 +83,11 @@ before(async () => {
     OrderDeliverySettingsForm: (await server.ssrLoadModule('/src/components/OrderDeliverySettingsForm.jsx')).default,
     validateOrderDeliverySettingsForm: (await server.ssrLoadModule('/src/components/OrderDeliverySettingsForm.jsx')).validateOrderDeliverySettingsForm,
     deliveryFeeFor: (await server.ssrLoadModule('/src/components/UI.jsx')).deliveryFeeFor,
+    ChangePasswordForm: (await server.ssrLoadModule('/src/components/ChangePasswordForm.jsx')).default,
+    validateChangePasswordForm: (await server.ssrLoadModule('/src/components/ChangePasswordForm.jsx')).validateChangePasswordForm,
+    MIN_PASSWORD_LENGTH: (await server.ssrLoadModule('/src/components/ChangePasswordForm.jsx')).MIN_PASSWORD_LENGTH,
+    NotificationSettingsForm: (await server.ssrLoadModule('/src/components/NotificationSettingsForm.jsx')).default,
+    NOTIFICATION_EVENTS: (await server.ssrLoadModule('/src/components/NotificationSettingsForm.jsx')).NOTIFICATION_EVENTS,
     loadOrderSettings: (await server.ssrLoadModule('/src/hooks/useOrderSettings.js')).loadOrderSettings,
     resetOrderSettingsCache: (await server.ssrLoadModule('/src/hooks/useOrderSettings.js')).__resetOrderSettingsCacheForTests,
     ORDER_SETTINGS_DEFAULTS: (await server.ssrLoadModule('/src/hooks/useOrderSettings.js')).DEFAULTS,
@@ -537,12 +547,235 @@ describe('AdminSettingsPage (/admin/settings)', () => {
     assert.ok(!html.includes('not configured yet'));
   });
 
-  it('Payments, Notifications and Security & System still fall back to the no-persistence-yet placeholder (structural check — only General and Orders & Delivery have real forms so far)', async () => {
+  it('Payments and Security & System still fall back to the no-persistence-yet placeholder (structural check — General, Orders & Delivery and Notifications have real forms)', async () => {
     const { readFileSync } = await import('node:fs');
     const source = readFileSync(new URL('../src/pages/AdminSettingsPage.jsx', import.meta.url), 'utf8');
     assert.match(source, /active\.key === 'general'[\s\S]*?<GeneralSettingsForm/);
     assert.match(source, /active\.key === 'orders-delivery'[\s\S]*?<OrderDeliverySettingsForm/);
+    assert.match(source, /active\.key === 'notifications'[\s\S]*?<NotificationSettingsForm/);
     assert.match(source, /<EmptyState/);
+  });
+});
+
+describe('NotificationSettingsForm (/admin/settings — Notifications category)', () => {
+  it('shows a loading state first, before any saved settings arrive', () => {
+    const html = render(h(mods.NotificationSettingsForm), owner);
+    assert.match(html, /Loading settings/);
+  });
+
+  it('declares all four customer SMS events with a description of when each is sent', () => {
+    const keys = mods.NOTIFICATION_EVENTS.map(([key]) => key);
+    assert.deepEqual(keys, ['orderPlaced', 'outForDelivery', 'delivered', 'orderCancelled']);
+    for (const [key, label, description] of mods.NOTIFICATION_EVENTS) {
+      assert.ok(label && label.length > 2, key);
+      assert.ok(description && description.length > 20, `${key} needs a real description of when it is sent`);
+    }
+  });
+
+  it('never implies notifications are on before the real settings load (every switch starts off)', async () => {
+    // The SSR harness never runs effects, so this is the pre-fetch render: it must not show a form with
+    // switches already checked. It shows the loader instead, and the form's own blank state is all-off.
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/components/NotificationSettingsForm.jsx', import.meta.url), 'utf8');
+    assert.match(source, /function blankForm\(\)[\s\S]*?enabled: false[\s\S]*?orderPlaced: false[\s\S]*?outForDelivery: false[\s\S]*?delivered: false[\s\S]*?orderCancelled: false/);
+    assert.ok(!/enabled: true/.test(source), 'no switch may default to true');
+  });
+
+  it('reads and writes only the owner-only notifications endpoint', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/components/NotificationSettingsForm.jsx', import.meta.url), 'utf8');
+    assert.match(source, /api\.get\('\/settings\/notifications'\)/);
+    assert.match(source, /api\.patch\('\/settings\/notifications'/);
+    // Must not leak into the public settings endpoints the storefront reads.
+    assert.ok(!source.includes('/settings/general'), 'notification settings must not touch the public general endpoint');
+    assert.ok(!source.includes('/settings/orders-delivery'));
+  });
+
+  it('tells the owner that a queued SMS is not a delivered SMS, and what delivery depends on', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/components/NotificationSettingsForm.jsx', import.meta.url), 'utf8');
+    assert.match(source, /queued/i);
+    assert.match(source, /not the same as delivered|not necessarily delivered/i);
+    assert.match(source, /Android device/i);
+    assert.match(source, /SIM/);
+    assert.match(source, /carrier/i);
+  });
+
+  it('keeps the existing settings save/discard conventions', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/components/NotificationSettingsForm.jsx', import.meta.url), 'utf8');
+    assert.match(source, /Discard Changes/);
+    assert.match(source, /Save Changes/);
+    assert.match(source, /disabled=\{!dirty \|\| saving\}/);
+    assert.match(source, /inline-error/, 'a failed load must surface the existing error UI');
+  });
+});
+
+describe('ChangePasswordForm (Settings → Security & System, and /admin/account)', () => {
+  it('renders all three password fields, each masked by default with its own show/hide control', () => {
+    const html = render(h(mods.ChangePasswordForm), owner);
+    for (const label of ['Current password', 'New password', 'Confirm new password']) assert.match(html, new RegExp(label), label);
+    // Three password inputs, none revealed on first render.
+    assert.equal((html.match(/type="password"/g) || []).length, 3);
+    assert.ok(!html.includes('type="text"'), 'no password may start out visible');
+    for (const label of ['show current password', 'show new password', 'show confirm new password']) {
+      assert.match(html, new RegExp(`aria-label="${label}"`, 'i'), label);
+    }
+  });
+
+  it('uses the correct autocomplete hints so password managers behave', () => {
+    const html = render(h(mods.ChangePasswordForm), owner);
+    assert.equal((html.match(/autocomplete="current-password"/gi) || []).length, 1);
+    assert.equal((html.match(/autocomplete="new-password"/gi) || []).length, 2);
+  });
+
+  it('keeps the submit button disabled until all three fields are filled', () => {
+    const html = render(h(mods.ChangePasswordForm), owner);
+    assert.match(html, /Update Password/);
+    assert.match(html, /<button[^>]*disabled[^>]*>(?:(?!<\/button>).)*Update Password/s, 'the empty form must not be submittable');
+  });
+
+  it('never writes a password to browser storage or a URL', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/components/ChangePasswordForm.jsx', import.meta.url), 'utf8');
+    // Comments stripped first: the file documents that it avoids these, and a naive substring search
+    // would match that documentation rather than real usage.
+    const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    for (const forbidden of ['localStorage', 'sessionStorage', 'document.cookie', 'console.log', 'console.error']) {
+      assert.ok(!code.includes(forbidden), `the password form must never use ${forbidden}`);
+    }
+    // The payload goes in the POST body, never a query string.
+    assert.match(source, /api\.post\('\/auth\/change-password', form\)/);
+    assert.ok(!/change-password\?/.test(source));
+  });
+
+  it('reuses the one existing endpoint rather than duplicating password logic', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/components/ChangePasswordForm.jsx', import.meta.url), 'utf8');
+    assert.equal((source.match(/api\.(post|put|patch)\(/g) || []).length, 1, 'exactly one API call');
+    assert.ok(!source.includes('bcrypt') && !source.includes('hash('), 'no hashing or credential logic in the client');
+  });
+
+  describe('validateChangePasswordForm (pure validation, mirroring the backend)', () => {
+    const valid = () => ({ currentPassword: 'current-fixture-pw', newPassword: 'replacement-pw', confirmPassword: 'replacement-pw' });
+
+    it('accepts a valid form', () => {
+      assert.deepEqual(mods.validateChangePasswordForm(valid()), {});
+    });
+
+    it('requires every field', () => {
+      assert.ok(mods.validateChangePasswordForm({ ...valid(), currentPassword: '' }).currentPassword);
+      assert.ok(mods.validateChangePasswordForm({ ...valid(), newPassword: '' }).newPassword);
+      assert.ok(mods.validateChangePasswordForm({ ...valid(), confirmPassword: '' }).confirmPassword);
+    });
+
+    it('flags a confirmation mismatch', () => {
+      const errors = mods.validateChangePasswordForm({ ...valid(), confirmPassword: 'different-value' });
+      assert.match(errors.confirmPassword, /do not match/i);
+    });
+
+    it('flags reusing the current password, matching the backend rule', () => {
+      const same = 'identical-fixture-pw';
+      const errors = mods.validateChangePasswordForm({ currentPassword: same, newPassword: same, confirmPassword: same });
+      assert.match(errors.newPassword, /different from your current/i);
+    });
+
+    it('enforces exactly the backend minimum and nothing stricter', () => {
+      assert.equal(mods.MIN_PASSWORD_LENGTH, 8, 'must match authController.js (newPassword.length < 8)');
+      const short = 'abc1234'; // 7
+      assert.match(mods.validateChangePasswordForm({ currentPassword: 'current-fixture-pw', newPassword: short, confirmPassword: short }).newPassword, /at least 8/i);
+      // 8 plain lowercase characters: accepted by the backend, so the client must accept it too.
+      const eight = 'abcdefgh';
+      assert.deepEqual(mods.validateChangePasswordForm({ currentPassword: 'current-fixture-pw', newPassword: eight, confirmPassword: eight }), {});
+    });
+  });
+});
+
+describe('Change Password placement', () => {
+  it('lives in the existing Security & System settings category, with no new page or nav item', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminSettingsPage.jsx', import.meta.url), 'utf8');
+    assert.match(source, /active\.key === 'security-system'[\s\S]*?<ChangePasswordForm/);
+    // The category list itself is unchanged — still the same five categories.
+    assert.equal((source.match(/key: '/g) || []).length, 5);
+    const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
+    assert.ok(!app.includes('password') || !/path="admin\/.*password/.test(app), 'no new route was added for this');
+    const nav = readFileSync(new URL('../src/components/adminNavigation.js', import.meta.url), 'utf8');
+    assert.ok(!/password/i.test(nav), 'no new sidebar item was added');
+  });
+
+  it('the owner opening Security & System gets the real form, not the not-configured placeholder', () => {
+    const html = render(h(mods.AdminSettingsPage), owner);
+    // General is the default tab, so assert on the source wiring plus the rendered form in isolation.
+    assert.match(render(h(mods.ChangePasswordForm), owner), /Update Password/);
+    assert.ok(html.includes('Security &amp; System'), 'the category is still listed');
+  });
+
+  it('staff see a Change password section on /admin/account, with still no profile editing', () => {
+    const member = staff(['orders:view'], { firstName: 'Priya', lastName: 'Patel', adminId: 'priya.p' });
+    const html = render(h(mods.AdminAccountPage), member);
+    assert.match(html, /Change password/i);
+    assert.match(html, /Update Password/);
+    assert.equal((html.match(/type="password"/g) || []).length, 3);
+    // The identity fields stay read-only: the only inputs on the page are the password fields plus
+    // their show/hide buttons (PUT /auth/me still rejects staff profile edits).
+    assert.equal((html.match(/<input/g) || []).length, 3, 'no profile text inputs may appear');
+  });
+
+  it('the owner is still redirected away from /admin/account to business settings (unchanged)', () => {
+    const html = render(h(mods.AdminAccountPage), owner);
+    assert.ok(!html.includes('Change password'), 'the owner uses Settings → Security & System instead');
+  });
+
+  it('is not added to the delivery rider settings page (riders sign in by OTP only)', () => {
+    const rider = staff(['delivery:view', 'delivery:update'], { firstName: 'Ravi', adminId: 'ravi.r', phone: '9876500001' });
+    const html = render(h(mods.DeliverySettingsPage), rider);
+    assert.ok(!html.includes('type="password"'), 'no password form may appear for a rider');
+    assert.ok(!/Change password/i.test(html));
+  });
+});
+
+describe('forced first-login password change (regression — must be untouched)', () => {
+  it('still renders its own standalone flow with its temporary-password wording and sign-out option', () => {
+    const pending = { role: 'staff', isActive: true, firstName: 'Sam', mustChangePassword: true, permissions: [] };
+    const html = render(h(mods.ForcePasswordChangePage), pending);
+    assert.match(html, /Temporary password/i, 'the forced flow keeps its own wording');
+    assert.match(html, /Choose a new password/i);
+    assert.match(html, /Save new password/);
+    assert.match(html, /Sign out/i);
+  });
+
+  it('still posts to the same single endpoint with the same three fields', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/ForcePasswordChangePage.jsx', import.meta.url), 'utf8');
+    assert.match(source, /api\.post\('\/auth\/change-password', form\)/);
+    assert.match(source, /currentPassword: '', newPassword: '', confirmPassword: ''/);
+    assert.match(source, /refreshUser\(\)/, 'it must still refresh the session so the guard releases');
+  });
+});
+
+describe('notification settings access control', () => {
+  it('only the owner reaches /admin/settings at all — staff, riders and customers are denied', () => {
+    // The Notifications form lives on /admin/settings, which App.jsx wraps in the owner-only guard
+    // (asserted above); this re-checks the guard itself with the real component.
+    for (const user of [staff(['orders:view', 'orders:update_status']), staff(['delivery:view', 'delivery:update']), customer]) {
+      const html = render(h(mods.RequirePermission, { ownerOnly: true }, h(mods.NotificationSettingsForm)), user);
+      assert.match(html, /Access denied|do not have permission/i, JSON.stringify(user.permissions || user.role));
+      assert.ok(!html.includes('Send SMS notifications'), 'a non-owner must never see the notification switches');
+      assert.ok(!html.includes('Loading settings'), 'a non-owner must not even trigger the settings fetch');
+    }
+  });
+
+  // Allowed renders an <Outlet/>, which is empty outside <Routes> — so "allowed" means no denial,
+  // same convention as the RequirePermission tests at the top of this file.
+  it('the owner is allowed through that same guard', () => {
+    const html = render(h(mods.RequirePermission, { ownerOnly: true }, h(mods.NotificationSettingsForm)), owner);
+    assert.ok(!/Access denied/i.test(html));
+  });
+
+  it('the owner sees the real form when it is rendered directly (the switches exist for them)', () => {
+    const html = render(h(mods.NotificationSettingsForm), owner);
+    assert.match(html, /Loading settings/);
   });
 });
 
@@ -712,7 +945,11 @@ describe('AdminAccountPage (/admin/account)', () => {
     assert.match(html, /My Permissions/);
     assert.match(html, /View orders/);
     assert.match(html, /View Assigned Deliveries/);
-    assert.ok(!html.includes('<input'), 'account details must be read-only — no edit controls');
+    // Identity stays read-only — PUT /auth/me still rejects staff profile edits. Since the Change
+    // Password step, the only inputs on this page are its three password fields, so this now asserts
+    // "no editable profile field" rather than "no input at all".
+    assert.ok(!/<input(?![^>]*type="password")/.test(html), 'account details must stay read-only — no profile edit controls');
+    assert.equal((html.match(/type="password"/g) || []).length, 3, 'only the three Change Password fields');
   });
 
   it('never shows business-wide settings content on the personal account page', () => {
@@ -793,12 +1030,64 @@ describe('session error handling', () => {
 describe('useBusinessSettings (shared public-branding data behind Navbar/Footer/Contact)', () => {
   afterEach(() => mods.resetBusinessSettingsCache());
 
-  it('returns the saved business name and logo on a successful fetch, and nothing else from the response', async () => {
+  it('returns the saved public storefront fields on a successful fetch, and nothing else from the response', async () => {
     const original = mods.api.get;
-    mods.api.get = async () => ({ data: { settings: { businessName: 'Fresh Mart', logo: 'data:image/png;base64,ABC', phone: '9876543210', email: 'owner@x.com' } } });
+    mods.api.get = async () => ({ data: { settings: {
+      businessName: 'Fresh Mart', logo: 'data:image/png;base64,ABC', phone: '9876543210', email: 'owner@x.com',
+      address: { line1: '12 MG Road', city: 'Pune', postalCode: '411001' },
+      operatingHours: { monday: { closed: false, open: '09:00', close: '21:00' } },
+      // Internal bookkeeping — must not come through to public components.
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    } } });
     try {
       const result = await mods.loadBusinessSettings();
-      assert.deepEqual(result, { businessName: 'Fresh Mart', logo: 'data:image/png;base64,ABC' });
+      assert.deepEqual(Object.keys(result).sort(), ['address', 'businessName', 'email', 'logo', 'operatingHours', 'phone']);
+      assert.equal(result.businessName, 'Fresh Mart');
+      assert.equal(result.phone, '9876543210');
+      assert.equal(result.email, 'owner@x.com');
+      assert.equal(result.address.city, 'Pune');
+      assert.equal(result.operatingHours.monday.open, '09:00', 'the saved hours reach the shared hook data');
+      assert.ok(!('updatedAt' in result));
+    } finally {
+      mods.api.get = original;
+    }
+  });
+
+  it('clears the cache on invalidation, so the next load refetches the newly saved values', async () => {
+    const original = mods.api.get;
+    let calls = 0;
+    mods.api.get = async () => {
+      calls += 1;
+      return { data: { settings: calls === 1 ? { businessName: 'Before', phone: '9876543210' } : { businessName: 'After', phone: '9811111111' } } };
+    };
+    try {
+      assert.equal((await mods.loadBusinessSettings()).phone, '9876543210');
+      assert.equal((await mods.loadBusinessSettings()).phone, '9876543210', 'still cached');
+      assert.equal(calls, 1);
+      mods.invalidateBusinessSettings();
+      const after = await mods.loadBusinessSettings();
+      assert.equal(after.phone, '9811111111', 'a save must not leave the public pages on stale data');
+      assert.equal(after.businessName, 'After');
+      assert.equal(calls, 2);
+    } finally {
+      mods.api.get = original;
+    }
+  });
+
+  it('a response that arrives after an invalidation does not repopulate the cache with stale values', async () => {
+    const original = mods.api.get;
+    let calls = 0;
+    mods.api.get = async () => {
+      calls += 1;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      return { data: { settings: { businessName: calls === 1 ? 'Stale' : 'Fresh' } } };
+    };
+    try {
+      const inflight = mods.loadBusinessSettings();
+      mods.invalidateBusinessSettings(); // owner saved while that request was still open
+      await inflight;
+      assert.equal((await mods.loadBusinessSettings()).businessName, 'Fresh');
+      assert.equal(calls, 2, 'the invalidated request must not have been cached and reused');
     } finally {
       mods.api.get = original;
     }
@@ -849,6 +1138,237 @@ describe('useBusinessSettings (shared public-branding data behind Navbar/Footer/
       mods.api.get = original;
     }
   });
+
+  describe('formatOperatingHours (pure formatting of the real stored shape)', () => {
+    const allDays = (entry) => Object.fromEntries(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map((day) => [day, { ...entry }]));
+
+    it('formats the stored 24-hour values as readable 12-hour ranges', () => {
+      const rows = mods.formatOperatingHours({ monday: { closed: false, open: '09:00', close: '21:00' } });
+      assert.deepEqual(rows, [{ days: 'Mon', hours: '9:00 AM – 9:00 PM' }]);
+    });
+
+    it('handles midnight and noon boundaries without printing "0:00" or "12:00 AM" wrongly', () => {
+      assert.equal(mods.formatOperatingHours({ monday: { open: '00:30', close: '12:00' } })[0].hours, '12:30 AM – 12:00 PM');
+      assert.equal(mods.formatOperatingHours({ monday: { open: '12:30', close: '23:45' } })[0].hours, '12:30 PM – 11:45 PM');
+    });
+
+    it('collapses consecutive days that share the same hours', () => {
+      const hours = allDays({ closed: false, open: '09:00', close: '21:00' });
+      hours.sunday = { closed: true };
+      const rows = mods.formatOperatingHours(hours);
+      assert.deepEqual(rows, [
+        { days: 'Mon – Sat', hours: '9:00 AM – 9:00 PM' },
+        { days: 'Sun', hours: 'Closed' },
+      ]);
+    });
+
+    it('shows a closed day as "Closed", never as a time range', () => {
+      const rows = mods.formatOperatingHours({ sunday: { closed: true, open: '09:00', close: '21:00' } });
+      assert.deepEqual(rows, [{ days: 'Sun', hours: 'Closed' }]);
+    });
+
+    it('includes only the days that are actually stored', () => {
+      const rows = mods.formatOperatingHours({ saturday: { open: '10:00', close: '14:00' } });
+      assert.deepEqual(rows, [{ days: 'Sat', hours: '10:00 AM – 2:00 PM' }]);
+    });
+
+    it('never groups non-adjacent days into a false range when a day between them is unusable', () => {
+      const rows = mods.formatOperatingHours({
+        monday: { open: '09:00', close: '21:00' },
+        tuesday: { open: 'garbage', close: 'garbage' }, // unusable, dropped
+        wednesday: { open: '09:00', close: '21:00' },
+      });
+      assert.deepEqual(rows, [
+        { days: 'Mon', hours: '9:00 AM – 9:00 PM' },
+        { days: 'Wed', hours: '9:00 AM – 9:00 PM' },
+      ], 'Mon and Wed must not collapse into "Mon – Wed" when Tue is missing');
+    });
+
+    it('drops malformed days rather than rendering something untrue', () => {
+      const malformed = {
+        monday: { open: '25:00', close: '09:00' },
+        tuesday: { open: '09:00' },
+        wednesday: { open: null, close: null },
+        thursday: { open: '21:00', close: '09:00' }, // close before open
+        friday: 'open all day',
+        saturday: [],
+        sunday: null,
+      };
+      assert.deepEqual(mods.formatOperatingHours(malformed), []);
+    });
+
+    it('returns an empty list for missing, empty or non-object input — never throws', () => {
+      for (const value of [undefined, null, {}, [], 'closed', 42]) {
+        assert.deepEqual(mods.formatOperatingHours(value), [], JSON.stringify(value));
+      }
+    });
+  });
+
+  describe('formatBusinessAddress', () => {
+    it('joins only the parts that are filled in', () => {
+      assert.equal(mods.formatBusinessAddress({ line1: '12 MG Road', line2: '', city: 'Pune', state: 'MH', postalCode: '411001' }), '12 MG Road, Pune, MH, 411001');
+    });
+
+    it('returns an empty string for a missing, empty or blank address — never "undefined"', () => {
+      for (const value of [undefined, null, {}, { line1: '   ', city: '' }]) {
+        assert.equal(mods.formatBusinessAddress(value), '', JSON.stringify(value));
+      }
+    });
+  });
+});
+
+describe('public Contact page: saved contact details (Step 2)', () => {
+  afterEach(() => mods.resetBusinessSettingsCache());
+
+  async function renderContactWith(settings) {
+    const original = mods.api.get;
+    mods.api.get = async () => ({ data: { settings } });
+    try {
+      await mods.loadBusinessSettings(); // pre-warms the shared cache the component reads on first render
+      return render(h(mods.ContactPage, null), null, { path: '/contact' });
+    } finally {
+      mods.api.get = original;
+    }
+  }
+
+  it('shows the configured phone, email and address', async () => {
+    const html = await renderContactWith({
+      businessName: 'Fresh Mart', phone: '9876543210', email: 'owner@freshmart.in',
+      address: { line1: '12 MG Road', city: 'Pune', state: 'MH', postalCode: '411001' },
+    });
+    assert.match(html, /98765 43210/, 'the saved number, formatted for reading');
+    assert.match(html, /owner@freshmart\.in/);
+    assert.match(html, /12 MG Road, Pune, MH, 411001/);
+  });
+
+  it('makes the phone and email tappable with tel: and mailto: links', async () => {
+    const html = await renderContactWith({ phone: '9876543210', email: 'owner@freshmart.in', address: {} });
+    assert.match(html, /href="tel:\+919876543210"/, 'tel: must carry the dialable digits, not the spaced form');
+    assert.match(html, /href="mailto:owner@freshmart\.in"/);
+  });
+
+  it('never shows the old hardcoded demo phone or email once settings are configured', async () => {
+    const html = await renderContactWith({ phone: '9811111111', email: 'real@store.in', address: {} });
+    assert.ok(!html.includes('98765 43210'), 'the demo number must be gone');
+    assert.ok(!html.includes('hello@janai.in'), 'the demo email must be gone');
+  });
+
+  it('hides the phone and email rows entirely when nothing is configured — never renders undefined/null or a fake number', async () => {
+    const html = await renderContactWith({ businessName: 'Janai' });
+    for (const leak of ['undefined', 'null', 'tel:', 'mailto:', '98765 43210', 'hello@janai.in']) {
+      assert.ok(!html.includes(leak), `an unconfigured Contact page must not render "${leak}"`);
+    }
+    // The page itself still works: heading and the contact form remain.
+    assert.match(html, /Contact Janai/);
+    assert.match(html, /Send message/);
+  });
+
+  it('falls back to the existing generic line when no address is saved, rather than an empty row', async () => {
+    const html = await renderContactWith({ phone: '9876543210', address: { line1: '', city: '' } });
+    assert.match(html, /Serving local homes and businesses/);
+  });
+
+  it('keeps working on a failed settings fetch, showing no contact rows and no demo data', async () => {
+    const original = mods.api.get;
+    mods.api.get = async () => { throw new Error('backend unreachable'); };
+    try {
+      await mods.loadBusinessSettings();
+      const html = render(h(mods.ContactPage, null), null, { path: '/contact' });
+      assert.match(html, /Contact Janai/, 'falls back to the default business name');
+      assert.ok(!html.includes('tel:') && !html.includes('mailto:'));
+      assert.ok(!html.includes('undefined'));
+    } finally {
+      mods.api.get = original;
+    }
+  });
+
+  it('shows the saved operating hours, collapsed and readable, under a Store hours heading', async () => {
+    const open = { closed: false, open: '09:00', close: '21:00' };
+    const html = await renderContactWith({
+      businessName: 'Janai',
+      operatingHours: {
+        monday: open, tuesday: open, wednesday: open, thursday: open, friday: open,
+        saturday: { closed: false, open: '10:00', close: '18:00' },
+        sunday: { closed: true },
+      },
+    });
+    assert.match(html, /Store hours/);
+    assert.match(html, /Mon – Fri/);
+    assert.match(html, /9:00 AM – 9:00 PM/);
+    assert.match(html, /Sat/);
+    assert.match(html, /10:00 AM – 6:00 PM/);
+    assert.match(html, /Sun/);
+    assert.match(html, /Closed/);
+  });
+
+  it('shows the neutral message when hours are not configured, inventing no schedule', async () => {
+    const html = await renderContactWith({ businessName: 'Janai' });
+    assert.match(html, /Operating hours not available/);
+    assert.ok(!/AM|PM|Closed/.test(html.split('Store hours')[1] || ''), 'no times may be implied');
+  });
+
+  it('shows the neutral message rather than anything unsafe when every stored day is malformed', async () => {
+    const html = await renderContactWith({
+      operatingHours: { monday: { open: '99:99', close: 'x' }, tuesday: null, wednesday: 'open' },
+    });
+    assert.match(html, /Operating hours not available/);
+    for (const leak of ['undefined', 'null', '[object Object]', '99:99', '{"', 'NaN']) {
+      assert.ok(!html.includes(leak), `the hours section must never render "${leak}"`);
+    }
+  });
+
+  it('renders hours as real markup, never raw JSON', async () => {
+    const html = await renderContactWith({ operatingHours: { monday: { closed: false, open: '09:00', close: '21:00' } } });
+    assert.match(html, /<dt>Mon<\/dt><dd>9:00 AM – 9:00 PM<\/dd>/);
+    assert.ok(!html.includes('"open"') && !html.includes('[object Object]'));
+  });
+
+  it('keeps the existing contact rows working alongside the hours (no Step 2 regression)', async () => {
+    const html = await renderContactWith({
+      businessName: 'Fresh Mart', phone: '9876543210', email: 'owner@freshmart.in',
+      address: { line1: '12 MG Road', city: 'Pune' },
+      operatingHours: { monday: { closed: false, open: '09:00', close: '21:00' } },
+    });
+    assert.match(html, /href="tel:\+919876543210"/);
+    assert.match(html, /href="mailto:owner@freshmart\.in"/);
+    assert.match(html, /12 MG Road, Pune/);
+    assert.match(html, /Store hours/);
+    assert.match(html, /Contact Fresh Mart/);
+    assert.match(html, /Send message/, 'the contact form is untouched');
+  });
+
+  it('serves updated hours after a General Settings save invalidates the cache — with no extra request', async () => {
+    const original = mods.api.get;
+    let calls = 0;
+    mods.api.get = async () => {
+      calls += 1;
+      return { data: { settings: { operatingHours: { monday: { closed: false, open: '09:00', close: calls === 1 ? '21:00' : '23:00' } } } } };
+    };
+    try {
+      await mods.loadBusinessSettings();
+      assert.match(render(h(mods.ContactPage, null), null, { path: '/contact' }), /9:00 AM – 9:00 PM/);
+      assert.equal(calls, 1, 'one shared request, not one per field');
+
+      mods.invalidateBusinessSettings(); // what the owner's save triggers
+      await mods.loadBusinessSettings();
+      const updated = render(h(mods.ContactPage, null), null, { path: '/contact' });
+      assert.match(updated, /9:00 AM – 11:00 PM/, 'the new closing time must be shown');
+      assert.ok(!updated.includes('9:00 AM – 9:00 PM'));
+      assert.equal(calls, 2, 'exactly one refetch after invalidation');
+    } finally {
+      mods.api.get = original;
+    }
+  });
+
+  it('the General Settings form invalidates the public cache after a successful save', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/components/GeneralSettingsForm.jsx', import.meta.url), 'utf8');
+    assert.match(source, /invalidateBusinessSettings\(\)/);
+    // It must run after the PATCH resolves, not before it.
+    const save = source.slice(source.indexOf('api.patch'));
+    assert.ok(save.indexOf('invalidateBusinessSettings()') > 0);
+  });
+
 });
 
 describe('Logo (Navbar + Footer): custom logo, default fallback, broken-image fallback', () => {
@@ -871,6 +1391,353 @@ describe('Logo (Navbar + Footer): custom logo, default fallback, broken-image fa
     assert.match(html, /alt="Fresh Mart"/);
     assert.match(html, /class="is-custom-logo"/);
     assert.match(html, /aria-label="Fresh Mart home"/);
+  });
+
+  it('renders a plain span with no link when to={null}, for chrome that is not a navigation target', async () => {
+    mods.api.get = async () => ({ data: { settings: { businessName: 'Fresh Mart', logo: '' } } });
+    await mods.loadBusinessSettings();
+    const html = render(h(mods.Logo, { to: null, className: 'adm-sidebar-logo' }), null);
+    assert.match(html, /<span class="brand-logo adm-sidebar-logo">/);
+    assert.ok(!html.includes('<a '), 'to={null} must not produce a link');
+    assert.ok(!html.includes('aria-label'), 'a non-interactive span needs no aria-label');
+  });
+
+  it('uses an explicit alt override for both the saved and the default logo', async () => {
+    mods.api.get = async () => ({ data: { settings: { businessName: 'Fresh Mart', logo: '' } } });
+    await mods.loadBusinessSettings();
+    assert.match(render(h(mods.Logo, { to: null, alt: 'Fresh Mart' }), null), /alt="Fresh Mart"/);
+    mods.resetBusinessSettingsCache();
+    const custom = 'data:image/png;base64,ABCDEF';
+    mods.api.get = async () => ({ data: { settings: { businessName: 'Fresh Mart', logo: custom } } });
+    await mods.loadBusinessSettings();
+    assert.match(render(h(mods.Logo, { to: null, alt: 'Fresh Mart' }), null), /alt="Fresh Mart"/);
+  });
+
+  it('never renders an empty or placeholder alt/aria-label if the saved name is blank', async () => {
+    mods.api.get = async () => ({ data: { settings: { businessName: '', logo: '' } } });
+    await mods.loadBusinessSettings();
+    const html = render(h(mods.Logo, null), null);
+    assert.ok(!html.includes('alt=""'), 'alt must never be empty');
+    assert.ok(!html.includes('aria-label=" home"') && !html.includes('undefined') && !html.includes('null'));
+    assert.match(html, /aria-label="Janai home"/, 'falls back to the default business name');
+  });
+});
+
+describe('admin panel branding follows General Settings (Step 4)', () => {
+  afterEach(() => mods.resetBusinessSettingsCache());
+
+  async function renderSidebarWith(settings) {
+    const original = mods.api.get;
+    mods.api.get = async () => ({ data: { settings } });
+    try {
+      await mods.loadBusinessSettings(); // pre-warms the shared cache the component reads on first render
+      return render(h(mods.AdminSidebar, { open: false }), owner);
+    } finally {
+      mods.api.get = original;
+    }
+  }
+
+  it('shows the saved custom logo with the saved business name as its alt text', async () => {
+    const custom = 'data:image/png;base64,ABCDEF';
+    const html = await renderSidebarWith({ businessName: 'Fresh Mart', logo: custom });
+    assert.match(html, new RegExp(`src="${custom}"`));
+    assert.match(html, /alt="Fresh Mart"/);
+    assert.match(html, /class="is-custom-logo"/, 'a custom logo needs the object-fit override, not the default crop');
+  });
+
+  it('falls back to the bundled Janai wordmark when no logo is saved', async () => {
+    const html = await renderSidebarWith({ businessName: 'Fresh Mart', logo: '' });
+    assert.match(html, /src="\/Janai-logo\.jpg"/);
+    assert.ok(!html.includes('is-custom-logo'));
+    assert.match(html, /alt="Fresh Mart"/, 'the alt still follows the saved name');
+  });
+
+  it('no longer hardcodes the Janai name as alt text once a different name is saved', async () => {
+    const html = await renderSidebarWith({ businessName: 'Fresh Mart', logo: '' });
+    assert.ok(!/alt="Janai"/.test(html), 'the hardcoded alt="Janai" must be gone');
+  });
+
+  it('falls back safely when settings are missing entirely, never rendering an empty alt', async () => {
+    const html = await renderSidebarWith({});
+    assert.match(html, /src="\/Janai-logo\.jpg"/);
+    assert.match(html, /alt="Janai"/);
+    assert.ok(!html.includes('alt=""') && !html.includes('undefined') && !html.includes('null'));
+  });
+
+  it('keeps the brand a non-interactive span and the existing sidebar structure intact', async () => {
+    const html = await renderSidebarWith({ businessName: 'Fresh Mart', logo: '' });
+    assert.match(html, /<span class="brand-logo adm-sidebar-logo">/);
+    assert.match(html, /adm-sidebar-brand/);
+    assert.match(html, /Admin Panel/, 'the panel label is unchanged');
+    assert.match(html, /adm-sidebar-nav/);
+    assert.match(html, /Dashboard/, 'navigation still renders');
+    assert.match(html, /Logout/);
+  });
+
+  it('picks up new branding after a General Settings save invalidates the shared cache, with no extra request', async () => {
+    const original = mods.api.get;
+    let calls = 0;
+    mods.api.get = async () => {
+      calls += 1;
+      return { data: { settings: { businessName: calls === 1 ? 'Janai' : 'Fresh Mart', logo: '' } } };
+    };
+    try {
+      await mods.loadBusinessSettings();
+      assert.match(render(h(mods.AdminSidebar, { open: false }), owner), /alt="Janai"/);
+      assert.equal(calls, 1, 'the panel shares the storefront request, it does not add its own');
+
+      mods.invalidateBusinessSettings(); // what GeneralSettingsForm triggers on a successful save
+      await mods.loadBusinessSettings();
+      assert.match(render(h(mods.AdminSidebar, { open: false }), owner), /alt="Fresh Mart"/);
+      assert.equal(calls, 2, 'exactly one refetch after invalidation');
+    } finally {
+      mods.api.get = original;
+    }
+  });
+
+  it('still only shows navigation the account may use (access control unchanged)', async () => {
+    const original = mods.api.get;
+    mods.api.get = async () => ({ data: { settings: { businessName: 'Fresh Mart', logo: '' } } });
+    try {
+      await mods.loadBusinessSettings();
+      const limited = render(h(mods.AdminSidebar, { open: false }), staff(['orders:view']));
+      assert.match(limited, /All Orders/);
+      assert.ok(!limited.includes('Staff & Access'), 'owner-only items stay hidden from staff');
+      assert.ok(!limited.includes('Settings'), 'the owner-only Settings link stays hidden');
+      assert.match(limited, /alt="Fresh Mart"/, 'branding still applies for staff');
+    } finally {
+      mods.api.get = original;
+    }
+  });
+});
+
+const rider = staff(['delivery:view', 'delivery:update'], { firstName: 'Ravi', lastName: 'Rider', adminId: 'ravi.r' });
+
+describe('delivery portal branding follows General Settings (Step 5)', () => {
+  afterEach(() => mods.resetBusinessSettingsCache());
+
+  async function renderDeliveryLayoutWith(settings) {
+    const original = mods.api.get;
+    mods.api.get = async () => ({ data: { settings } });
+    try {
+      await mods.loadBusinessSettings(); // pre-warms the shared cache the component reads on first render
+      return render(h(mods.DeliveryLayout, null), rider);
+    } finally {
+      mods.api.get = original;
+    }
+  }
+
+  it('shows the saved custom logo with the saved business name as alt text', async () => {
+    const custom = 'data:image/png;base64,ABCDEF';
+    const html = await renderDeliveryLayoutWith({ businessName: 'Fresh Mart', logo: custom });
+    assert.match(html, new RegExp(`src="${custom}"`));
+    assert.match(html, /alt="Fresh Mart"/);
+    assert.match(html, /class="is-custom-logo"/, 'a custom logo needs the object-fit override, not the default crop');
+    assert.match(html, /aria-label="Fresh Mart delivery home"/);
+  });
+
+  it('falls back to the bundled Janai wordmark and alt text when no logo is saved', async () => {
+    const html = await renderDeliveryLayoutWith({ businessName: 'Fresh Mart', logo: '' });
+    assert.match(html, /src="\/Janai-logo\.jpg"/);
+    assert.ok(!html.includes('is-custom-logo'));
+    assert.match(html, /alt="Fresh Mart"/, 'the alt still follows the saved name even on the default asset');
+  });
+
+  it('falls back safely when settings are missing entirely, never rendering undefined/null/empty alt', async () => {
+    const html = await renderDeliveryLayoutWith({});
+    assert.match(html, /src="\/Janai-logo\.jpg"/);
+    assert.match(html, /alt="Janai"/);
+    assert.ok(!html.includes('alt=""') && !html.includes('undefined') && !html.includes('null'));
+  });
+
+  it('picks up new branding after a General Settings save invalidates the shared cache, with no extra request', async () => {
+    const original = mods.api.get;
+    let calls = 0;
+    mods.api.get = async () => {
+      calls += 1;
+      return { data: { settings: { businessName: calls === 1 ? 'Janai' : 'Fresh Mart', logo: '' } } };
+    };
+    try {
+      await mods.loadBusinessSettings();
+      assert.match(render(h(mods.DeliveryLayout, null), rider), /alt="Janai"/);
+      assert.equal(calls, 1, 'the rider portal shares the one request, it does not add its own');
+
+      mods.invalidateBusinessSettings(); // what GeneralSettingsForm triggers on a successful save
+      await mods.loadBusinessSettings();
+      assert.match(render(h(mods.DeliveryLayout, null), rider), /alt="Fresh Mart"/);
+      assert.equal(calls, 2, 'exactly one refetch after invalidation');
+    } finally {
+      mods.api.get = original;
+    }
+  });
+
+  it('still shows the rider identity, settings link and logout — no regression from Step 4/earlier', async () => {
+    const html = await renderDeliveryLayoutWith({ businessName: 'Fresh Mart', logo: '' });
+    assert.match(html, /Ravi Rider/);
+    assert.match(html, /Delivery Partner/);
+    assert.match(html, /href="\/delivery\/settings"/);
+    assert.match(html, /Logout/);
+    assert.ok(!html.includes('adm-sidebar'), 'still no admin sidebar markup in the rider portal');
+  });
+});
+
+describe('delivery login branding follows General Settings (Step 5)', () => {
+  afterEach(() => mods.resetBusinessSettingsCache());
+
+  async function renderDeliveryLoginWith(settings) {
+    const original = mods.api.get;
+    mods.api.get = async () => ({ data: { settings } });
+    try {
+      await mods.loadBusinessSettings();
+      return render(h(mods.DeliveryLoginPage, null), null, { path: '/delivery/login' });
+    } finally {
+      mods.api.get = original;
+    }
+  }
+
+  it('shows the saved custom logo with the saved business name as alt text', async () => {
+    const custom = 'data:image/png;base64,ABCDEF';
+    const html = await renderDeliveryLoginWith({ businessName: 'Fresh Mart', logo: custom });
+    assert.match(html, new RegExp(`src="${custom}"`));
+    assert.match(html, /alt="Fresh Mart"/);
+    assert.match(html, /class="is-custom-logo"/);
+  });
+
+  it('falls back to the bundled wordmark and the "Janai" alt text when unconfigured', async () => {
+    const html = await renderDeliveryLoginWith({});
+    assert.match(html, /src="\/Janai-logo\.jpg"/);
+    assert.match(html, /alt="Janai"/);
+    assert.ok(!html.includes('alt=""') && !html.includes('undefined') && !html.includes('null'));
+  });
+
+  it('remains OTP-only: shows the mobile-number form, no password field, same footer links', async () => {
+    const html = await renderDeliveryLoginWith({ businessName: 'Fresh Mart', logo: '' });
+    assert.match(html, /Delivery Partner Login/);
+    assert.match(html, /Registered Mobile Number/);
+    assert.match(html, /Send OTP/);
+    assert.ok(!html.includes('type="password"'), 'no password field may appear on the rider login');
+    assert.match(html, /Customer sign in/);
+    assert.match(html, /Admin sign in/);
+    assert.match(html, /Only active delivery staff accounts can sign in here\./);
+  });
+
+  it('picks up new branding after cache invalidation, with no extra request', async () => {
+    const original = mods.api.get;
+    let calls = 0;
+    mods.api.get = async () => {
+      calls += 1;
+      return { data: { settings: { businessName: calls === 1 ? 'Janai' : 'Fresh Mart' } } };
+    };
+    try {
+      await mods.loadBusinessSettings();
+      assert.match(render(h(mods.DeliveryLoginPage, null), null, { path: '/delivery/login' }), /alt="Janai"/);
+      mods.invalidateBusinessSettings();
+      await mods.loadBusinessSettings();
+      assert.match(render(h(mods.DeliveryLoginPage, null), null, { path: '/delivery/login' }), /alt="Fresh Mart"/);
+      assert.equal(calls, 2);
+    } finally {
+      mods.api.get = original;
+    }
+  });
+});
+
+describe('public authentication pages (AuthFrame) branding follows General Settings (Step 5)', () => {
+  afterEach(() => mods.resetBusinessSettingsCache());
+
+  async function renderAuthFrameWith(settings, props = {}) {
+    const original = mods.api.get;
+    mods.api.get = async () => ({ data: { settings } });
+    try {
+      await mods.loadBusinessSettings();
+      return render(h(mods.AuthFrame, { eyebrow: 'WELCOME', title: 'Sign in', description: 'Test description', ...props }), null, { path: '/login' });
+    } finally {
+      mods.api.get = original;
+    }
+  }
+
+  it('non-standalone (customer login/register/forgot-password): saved custom logo uses the saved name as alt and aria-label', async () => {
+    const custom = 'data:image/png;base64,ABCDEF';
+    const html = await renderAuthFrameWith({ businessName: 'Fresh Mart', logo: custom });
+    assert.match(html, new RegExp(`src="${custom}"`));
+    assert.match(html, /alt="Fresh Mart"/);
+    assert.match(html, /class="is-custom-logo"/);
+    assert.match(html, /aria-label="Fresh Mart home"/);
+  });
+
+  it('non-standalone fallback: unconfigured settings keep the existing default alt/aria-label exactly', async () => {
+    const html = await renderAuthFrameWith({});
+    assert.match(html, /src="\/Janai-logo\.jpg"/);
+    assert.match(html, /alt="Janai, Fruits Vegetables Groceries"/, 'the existing marketing alt text is preserved');
+    assert.match(html, /aria-label="Janai home"/);
+    assert.ok(!html.includes('is-custom-logo'));
+  });
+
+  it('standalone (admin login / forced password change): saved custom logo uses the saved name as alt, with no link', async () => {
+    const custom = 'data:image/png;base64,ABCDEF';
+    const html = await renderAuthFrameWith({ businessName: 'Fresh Mart', logo: custom }, { standalone: true });
+    assert.match(html, new RegExp(`src="${custom}"`));
+    assert.match(html, /alt="Fresh Mart"/);
+    assert.match(html, /<div class="auth-logo">/, 'standalone renders a div, not a link, around the logo');
+  });
+
+  it('standalone fallback: unconfigured settings keep the existing short "Janai" alt exactly', async () => {
+    const html = await renderAuthFrameWith({}, { standalone: true });
+    assert.match(html, /src="\/Janai-logo\.jpg"/);
+    assert.match(html, /alt="Janai"/);
+    assert.ok(!/alt="Janai, Fruits Vegetables Groceries"/.test(html), 'standalone keeps its own shorter existing alt, unchanged');
+  });
+
+  it('never renders undefined, null or an empty alt/aria-label when the saved name is blank', async () => {
+    const html = await renderAuthFrameWith({ businessName: '', logo: '' });
+    // The decorative category chips in the marketing photo panel (e.g. <img alt="" .../> for Fruits/
+    // Vegetables/Groceries icons) legitimately use alt="" and are unrelated to branding — scope the
+    // empty-alt check to the logo itself, not the whole page.
+    assert.match(html, /class="auth-logo"[^<]*<img[^>]*alt="[^"]+"/, 'the logo image must have a non-empty alt');
+    assert.ok(!html.includes('undefined') && !html.includes('null'));
+    assert.match(html, /aria-label="Janai home"/, 'falls back to the default business name');
+  });
+
+  it('is wired to fall back on a broken custom-logo image, same as the shared Logo component', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AccountPages.jsx', import.meta.url), 'utf8');
+    assert.match(source, /onError=\{onLogoError\}/);
+    assert.match(source, /setBrokenLogo\(true\)/);
+  });
+
+  it('picks up new branding after cache invalidation, sharing one request with the rest of the app', async () => {
+    // Without a saved logo, alt stays the fixed marketing phrase regardless of business name (same
+    // precedent as the Navbar/Footer Logo) — aria-label is what tracks the saved name here.
+    const original = mods.api.get;
+    let calls = 0;
+    mods.api.get = async () => {
+      calls += 1;
+      return { data: { settings: { businessName: calls === 1 ? 'Janai' : 'Fresh Mart' } } };
+    };
+    try {
+      await mods.loadBusinessSettings();
+      assert.match(render(h(mods.AuthFrame, { eyebrow: 'E', title: 'T', description: 'D' }), null, { path: '/login' }), /aria-label="Janai home"/);
+      assert.equal(calls, 1);
+      mods.invalidateBusinessSettings();
+      await mods.loadBusinessSettings();
+      assert.match(render(h(mods.AuthFrame, { eyebrow: 'E', title: 'T', description: 'D' }), null, { path: '/login' }), /aria-label="Fresh Mart home"/);
+      assert.equal(calls, 2, 'exactly one refetch after invalidation');
+    } finally {
+      mods.api.get = original;
+    }
+  });
+
+  it('existing structural elements (back link, photo panel, eyebrow/title/description) are unchanged', async () => {
+    const html = await renderAuthFrameWith({ businessName: 'Fresh Mart', logo: '' });
+    assert.match(html, /auth-photo/);
+    assert.match(html, /WELCOME/);
+    assert.match(html, /Sign in/);
+    assert.match(html, /Test description/);
+    assert.match(html, /Back to Home/, 'non-standalone keeps the back-to-home link');
+  });
+
+  it('standalone omits the back-to-home link, unchanged from before', async () => {
+    const html = await renderAuthFrameWith({ businessName: 'Fresh Mart', logo: '' }, { standalone: true });
+    assert.ok(!html.includes('Back to Home'));
   });
 });
 
