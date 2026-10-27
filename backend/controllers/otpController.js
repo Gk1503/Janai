@@ -192,17 +192,18 @@ function makeVerifyOtp({ purpose, findAccount, notFoundMessage, onVerified }) {
 }
 
 const CUSTOMER_NOT_FOUND = 'No account found with this mobile number. Please register first.';
-const CUSTOMER_MESSAGE = 'Janai: {code} is your login OTP. Valid for 5 minutes. Do not share it with anyone.';
+// One template for every OTP login. {code} is replaced by the gateway. Override with SMS_OTP_TEMPLATE in .env
+// to change the wording without touching code (some carriers filter certain OTP-style words).
+const OTP_MESSAGE = process.env.SMS_OTP_TEMPLATE || 'Janai: {code} is your verification code.';
 // Deliberately generic: the same response whether the number belongs to no account, a customer, an
 // owner, an inactive staff account, or an active staff account without delivery:view.
 const DELIVERY_NOT_FOUND = 'No delivery staff account found with this mobile number.';
-const DELIVERY_MESSAGE = 'Your Janai delivery login OTP is {code}. It is valid for 5 minutes. Do not share it with anyone.';
 
 export const sendLoginOtp = makeSendOtp({
   purpose: OTP_PURPOSES.CUSTOMER_LOGIN,
   findAccount: findRegisteredCustomer,
   notFoundMessage: CUSTOMER_NOT_FOUND,
-  message: CUSTOMER_MESSAGE,
+  message: OTP_MESSAGE,
   successMessage: 'OTP sent successfully.',
 });
 
@@ -210,7 +211,7 @@ export const resendLoginOtp = makeResendOtp({
   purpose: OTP_PURPOSES.CUSTOMER_LOGIN,
   findAccount: findRegisteredCustomer,
   notFoundMessage: CUSTOMER_NOT_FOUND,
-  message: CUSTOMER_MESSAGE,
+  message: OTP_MESSAGE,
 });
 
 export const verifyLoginOtp = makeVerifyOtp({
@@ -224,7 +225,7 @@ export const sendDeliveryOtp = makeSendOtp({
   purpose: OTP_PURPOSES.DELIVERY_LOGIN,
   findAccount: findEligibleDeliveryStaff,
   notFoundMessage: DELIVERY_NOT_FOUND,
-  message: DELIVERY_MESSAGE,
+  message: OTP_MESSAGE,
   successMessage: 'OTP sent successfully.',
 });
 
@@ -232,7 +233,7 @@ export const resendDeliveryOtp = makeResendOtp({
   purpose: OTP_PURPOSES.DELIVERY_LOGIN,
   findAccount: findEligibleDeliveryStaff,
   notFoundMessage: DELIVERY_NOT_FOUND,
-  message: DELIVERY_MESSAGE,
+  message: OTP_MESSAGE,
 });
 
 export const verifyDeliveryOtp = makeVerifyOtp({
