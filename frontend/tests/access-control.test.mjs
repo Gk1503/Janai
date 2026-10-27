@@ -86,6 +86,10 @@ before(async () => {
     ChangePasswordForm: (await server.ssrLoadModule('/src/components/ChangePasswordForm.jsx')).default,
     validateChangePasswordForm: (await server.ssrLoadModule('/src/components/ChangePasswordForm.jsx')).validateChangePasswordForm,
     MIN_PASSWORD_LENGTH: (await server.ssrLoadModule('/src/components/ChangePasswordForm.jsx')).MIN_PASSWORD_LENGTH,
+    decideCategorySwitch: (await server.ssrLoadModule('/src/utils/settingsNavGuard.js')).decideCategorySwitch,
+    registerSettingsFormGuard: (await server.ssrLoadModule('/src/hooks/useSettingsFormGuard.js')).registerSettingsFormGuard,
+    handleBeforeUnload: (await server.ssrLoadModule('/src/hooks/useSettingsFormGuard.js')).handleBeforeUnload,
+    SettingsNavGuardDialog: (await server.ssrLoadModule('/src/components/SettingsNavGuardDialog.jsx')).default,
     NotificationSettingsForm: (await server.ssrLoadModule('/src/components/NotificationSettingsForm.jsx')).default,
     NOTIFICATION_EVENTS: (await server.ssrLoadModule('/src/components/NotificationSettingsForm.jsx')).NOTIFICATION_EVENTS,
     loadOrderSettings: (await server.ssrLoadModule('/src/hooks/useOrderSettings.js')).loadOrderSettings,
@@ -547,13 +551,233 @@ describe('AdminSettingsPage (/admin/settings)', () => {
     assert.ok(!html.includes('not configured yet'));
   });
 
-  it('Payments and Security & System still fall back to the no-persistence-yet placeholder (structural check — General, Orders & Delivery and Notifications have real forms)', async () => {
+  it('General, Orders & Delivery, Notifications and Security & System each render a real form; only Payments still falls back to the no-persistence-yet placeholder', async () => {
     const { readFileSync } = await import('node:fs');
     const source = readFileSync(new URL('../src/pages/AdminSettingsPage.jsx', import.meta.url), 'utf8');
-    assert.match(source, /active\.key === 'general'[\s\S]*?<GeneralSettingsForm/);
-    assert.match(source, /active\.key === 'orders-delivery'[\s\S]*?<OrderDeliverySettingsForm/);
-    assert.match(source, /active\.key === 'notifications'[\s\S]*?<NotificationSettingsForm/);
+    assert.match(source, /active\.key === 'general'\) content = <GeneralSettingsForm/);
+    assert.match(source, /active\.key === 'orders-delivery'\) content = <OrderDeliverySettingsForm/);
+    assert.match(source, /active\.key === 'notifications'\) content = <NotificationSettingsForm/);
+    assert.match(source, /active\.key === 'security-system'[\s\S]*?<ChangePasswordForm/);
     assert.match(source, /<EmptyState/);
+  });
+});
+
+describe('decideCategorySwitch (pure nav-guard decision, utils/settingsNavGuard.js)', () => {
+  it('does nothing when the target category is already active', () => {
+    assert.equal(mods.decideCategorySwitch({ dirty: true, saving: false }, 'general', 'general'), 'none');
+  });
+
+  it('switches immediately when the active form is clean', () => {
+    assert.equal(mods.decideCategorySwitch({ dirty: false, saving: false }, 'general', 'notifications'), 'switch');
+  });
+
+  it('switches immediately when there is no guarded form at all — e.g. the Payments placeholder, which has nothing to lose', () => {
+    assert.equal(mods.decideCategorySwitch(null, 'payments', 'general'), 'switch');
+    assert.equal(mods.decideCategorySwitch(undefined, 'payments', 'general'), 'switch');
+  });
+
+  it('asks for confirmation when the active form has unsaved changes', () => {
+    assert.equal(mods.decideCategorySwitch({ dirty: true, saving: false }, 'general', 'notifications'), 'confirm');
+  });
+
+  it('blocks navigation outright while a save is in flight, never offering a dialog that could interrupt or race it', () => {
+    assert.equal(mods.decideCategorySwitch({ dirty: true, saving: true }, 'general', 'notifications'), 'blocked');
+    assert.equal(mods.decideCategorySwitch({ dirty: false, saving: true }, 'general', 'notifications'), 'blocked', 'saving takes priority even if dirty happens to read false mid-save');
+  });
+});
+
+describe('useSettingsFormGuard: registerSettingsFormGuard and handleBeforeUnload (hooks/useSettingsFormGuard.js)', () => {
+  it('writes the given state onto the ref', () => {
+    const ref = { current: null };
+    const save = () => {};
+    mods.registerSettingsFormGuard(ref, { dirty: true, saving: false, save });
+    assert.deepEqual(ref.current, { dirty: true, saving: false, save });
+  });
+
+  it('does nothing when no ref is given, so a form rendered without one is simply unguarded', () => {
+    assert.doesNotThrow(() => mods.registerSettingsFormGuard(undefined, { dirty: true, saving: false, save: () => {} }));
+    assert.doesNotThrow(() => mods.registerSettingsFormGuard(null, { dirty: true, saving: false, save: () => {} }));
+  });
+
+  it('warns (preventDefault + returnValue) only when dirty, and never otherwise', () => {
+    const clean = { preventDefault() { this.called = true; }, returnValue: undefined };
+    mods.handleBeforeUnload(false, clean);
+    assert.equal(clean.called, undefined, 'a clean form must never trigger the browser warning');
+    assert.equal(clean.returnValue, undefined);
+
+    const dirty = { preventDefault() { this.called = true; }, returnValue: undefined };
+    mods.handleBeforeUnload(true, dirty);
+    assert.equal(dirty.called, true);
+    assert.equal(dirty.returnValue, '');
+  });
+});
+
+describe('SettingsNavGuardDialog (the three-choice unsaved-changes dialog)', () => {
+  const noop = () => {};
+
+  it('renders nothing when closed', () => {
+    const html = render(h(mods.SettingsNavGuardDialog, { open: false, saving: false, onStay: noop, onDiscard: noop, onSaveAndContinue: noop }), null);
+    assert.equal(html, '');
+  });
+
+  it('shows three clearly labelled actions when open, as an accessible dialog — never vague "OK"/"Cancel" wording', () => {
+    const html = render(h(mods.SettingsNavGuardDialog, { open: true, saving: false, onStay: noop, onDiscard: noop, onSaveAndContinue: noop }), null);
+    assert.match(html, /role="dialog"/);
+    assert.match(html, /aria-modal="true"/);
+    assert.match(html, /aria-label="Unsaved changes"/);
+    assert.match(html, /Stay Editing/);
+    assert.match(html, /Discard Changes/);
+    assert.match(html, /Save and Continue/);
+    assert.ok(!/>OK<|>Cancel<|>Yes<|>No</.test(html), 'actions must be explicit, not generic OK/Cancel/Yes/No');
+  });
+
+  it('disables every action and shows a saving label while a dialog-triggered save is in flight — it cannot be interrupted, raced or duplicated', () => {
+    const html = render(h(mods.SettingsNavGuardDialog, { open: true, saving: true, onStay: noop, onDiscard: noop, onSaveAndContinue: noop }), null);
+    const disabledCount = (html.match(/disabled(="")?(?=[ >])/g) || []).length;
+    assert.equal(disabledCount, 3, 'Stay, Discard and Save and Continue must all be disabled while saving');
+    assert.match(html, /Saving…/);
+  });
+
+  it('the first action is reachable by keyboard without a pointer (receives initial focus)', () => {
+    const html = render(h(mods.SettingsNavGuardDialog, { open: true, saving: false, onStay: noop, onDiscard: noop, onSaveAndContinue: noop }), null);
+    assert.match(html, /autofocus(="")?/i);
+  });
+
+  it('maps Escape/backdrop-close to Stay Editing while idle, and disables that escape route while saving — the one choice that can never lose data is always available except mid-save', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/components/SettingsNavGuardDialog.jsx', import.meta.url), 'utf8');
+    assert.match(source, /onClose=\{saving \? \(\) => \{\} : onStay\}/);
+  });
+
+  it('wires each button to its own distinct callback prop, and never calls the API itself', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/components/SettingsNavGuardDialog.jsx', import.meta.url), 'utf8');
+    assert.match(source, /onClick=\{onStay\}/);
+    assert.match(source, /onClick=\{onDiscard\}/);
+    assert.match(source, /onClick=\{onSaveAndContinue\}/);
+    assert.ok(!source.includes('api.') && !source.includes('fetch('), 'the dialog must delegate to the active form, never call the API itself');
+  });
+});
+
+describe('AdminSettingsPage: category-switch guard wiring (structural)', () => {
+  it('renders the nav-guard dialog and passes the shared formGuardRef to every real form', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminSettingsPage.jsx', import.meta.url), 'utf8');
+    assert.match(source, /<SettingsNavGuardDialog/);
+    assert.match(source, /<GeneralSettingsForm formGuardRef=\{formGuardRef\}/);
+    assert.match(source, /<OrderDeliverySettingsForm formGuardRef=\{formGuardRef\}/);
+    assert.match(source, /<NotificationSettingsForm formGuardRef=\{formGuardRef\}/);
+    assert.match(source, /<ChangePasswordForm formGuardRef=\{formGuardRef\}/);
+  });
+
+  it('a category with no editable form is marked so, and never has the guard ref written to during render', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminSettingsPage.jsx', import.meta.url), 'utf8');
+    // Payments is the one category object with no hasForm flag.
+    assert.match(source, /key: 'payments'[^}]*\}/);
+    assert.ok(!/key: 'payments'[^}]*hasForm/.test(source), 'Payments must not be marked hasForm');
+    // No `.current =` assignment anywhere in this file — the ref is only ever read, in an event handler.
+    assert.ok(!/formGuardRef\.current\s*=/.test(source), 'AdminSettingsPage must never write to the ref itself');
+  });
+
+  it('gates which categories\' guard value is trusted by hasForm, checked inside the click handler (not during render)', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminSettingsPage.jsx', import.meta.url), 'utf8');
+    assert.match(source, /function requestSwitch\(nextKey\) \{[\s\S]*?active\.hasForm \? formGuardRef\.current : null/);
+    assert.match(source, /decideCategorySwitch\(guard, activeKey, nextKey\)/);
+  });
+
+  it('a save triggered through the dialog calls the active form\'s own exposed save — no second API request or duplicated validation', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminSettingsPage.jsx', import.meta.url), 'utf8');
+    assert.match(source, /guard\.save\(\)/);
+    assert.ok(!source.includes('api.patch') && !source.includes('api.post'), 'AdminSettingsPage must not call the settings API itself — it only delegates to the active form');
+  });
+
+  it('only navigates after a successful save, and discards/switches only through an explicit user choice', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminSettingsPage.jsx', import.meta.url), 'utf8');
+    assert.match(source, /if \(ok\) setActiveKey\(targetKey\)/, 'navigation after Save and Continue must be conditional on success');
+  });
+});
+
+describe('settings form guard registration on first render (General / Orders & Delivery / Notifications / ChangePassword)', () => {
+  it('GeneralSettingsForm registers {dirty:false, saving:false, save} before its data has even loaded', () => {
+    const ref = { current: null };
+    render(h(mods.GeneralSettingsForm, { formGuardRef: ref }), owner);
+    assert.ok(ref.current, 'the form must register itself even while still loading');
+    assert.equal(ref.current.dirty, false, 'loading must never be mistaken for a dirty edit');
+    assert.equal(ref.current.saving, false);
+    assert.equal(typeof ref.current.save, 'function');
+  });
+
+  it('OrderDeliverySettingsForm registers the guard on first render', () => {
+    const ref = { current: null };
+    render(h(mods.OrderDeliverySettingsForm, { formGuardRef: ref }), owner);
+    assert.equal(ref.current.dirty, false);
+    assert.equal(ref.current.saving, false);
+    assert.equal(typeof ref.current.save, 'function');
+  });
+
+  it('NotificationSettingsForm registers the guard on first render', () => {
+    const ref = { current: null };
+    render(h(mods.NotificationSettingsForm, { formGuardRef: ref }), owner);
+    assert.equal(ref.current.dirty, false);
+    assert.equal(ref.current.saving, false);
+    assert.equal(typeof ref.current.save, 'function');
+  });
+
+  it('ChangePasswordForm registers the guard on first render, starting clean from its blank baseline (there is nothing to load)', () => {
+    const ref = { current: null };
+    render(h(mods.ChangePasswordForm, { formGuardRef: ref }), owner);
+    assert.equal(ref.current.dirty, false, 'a blank password form is not dirty');
+    assert.equal(ref.current.saving, false);
+    assert.equal(typeof ref.current.save, 'function');
+  });
+
+  it('a form rendered without a formGuardRef prop does not throw — the ref is optional', () => {
+    assert.doesNotThrow(() => render(h(mods.ChangePasswordForm, null), owner));
+    assert.doesNotThrow(() => render(h(mods.GeneralSettingsForm, null), owner));
+    assert.doesNotThrow(() => render(h(mods.OrderDeliverySettingsForm, null), owner));
+    assert.doesNotThrow(() => render(h(mods.NotificationSettingsForm, null), owner));
+  });
+});
+
+describe('beforeunload warning wiring (structural check — all four editable Settings forms share one hook)', () => {
+  it('General, Orders & Delivery, Notifications and Change Password all call useBeforeUnloadWarning(dirty)', async () => {
+    const { readFileSync } = await import('node:fs');
+    for (const file of ['GeneralSettingsForm.jsx', 'OrderDeliverySettingsForm.jsx', 'NotificationSettingsForm.jsx', 'ChangePasswordForm.jsx']) {
+      const source = readFileSync(new URL(`../src/components/${file}`, import.meta.url), 'utf8');
+      assert.match(source, /useBeforeUnloadWarning\(dirty\)/, file);
+    }
+  });
+
+  it('Change Password previously had no beforeunload protection at all — it does now, same as the other three forms', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/components/ChangePasswordForm.jsx', import.meta.url), 'utf8');
+    assert.match(source, /const dirty = JSON\.stringify\(form\) !== JSON\.stringify\(blankForm\(\)\)/);
+  });
+});
+
+describe('each settings form\'s save returns true/false, reused by both its own submit and the nav-guard dialog', () => {
+  it('General, Orders & Delivery, Notifications and Change Password each expose one doSave with no second validation/API path', async () => {
+    const { readFileSync } = await import('node:fs');
+    const expectations = {
+      'GeneralSettingsForm.jsx': { endpoint: "'/settings/general'" },
+      'OrderDeliverySettingsForm.jsx': { endpoint: "'/settings/orders-delivery'" },
+      'NotificationSettingsForm.jsx': { endpoint: "'/settings/notifications'" },
+      'ChangePasswordForm.jsx': { endpoint: "'/auth/change-password'" },
+    };
+    for (const [file, { endpoint }] of Object.entries(expectations)) {
+      const source = readFileSync(new URL(`../src/components/${file}`, import.meta.url), 'utf8');
+      assert.match(source, /async function doSave\(\)/, file);
+      assert.match(source, /return true/, file);
+      assert.match(source, /return false/, file);
+      // Exactly one write call to the settings/auth endpoint — no duplicate request added for the dialog.
+      const writeCalls = (source.match(/api\.(patch|post)\(/g) || []).length;
+      assert.equal(writeCalls, 1, `${file} must make exactly one write call, shared by submit and the dialog`);
+      assert.ok(source.includes(endpoint), `${file} must still target ${endpoint}`);
+    }
   });
 });
 

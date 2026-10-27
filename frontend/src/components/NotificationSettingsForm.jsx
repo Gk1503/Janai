@@ -3,6 +3,7 @@ import { Info, Save } from 'lucide-react'
 import api, { getApiError } from '../services/api'
 import { useToast } from '../context/AppContexts'
 import { Loader } from './UI'
+import { registerSettingsFormGuard, useBeforeUnloadWarning } from '../hooks/useSettingsFormGuard'
 
 // Each event switch, with the description the owner sees. Order matters: this is the display order.
 export const NOTIFICATION_EVENTS = [
@@ -23,7 +24,7 @@ function toForm(settings = {}) {
   return Object.fromEntries(Object.keys(blank).map((key) => [key, settings[key] === true]))
 }
 
-export default function NotificationSettingsForm() {
+export default function NotificationSettingsForm({ formGuardRef } = {}) {
   const toast = useToast()
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
@@ -48,24 +49,13 @@ export default function NotificationSettingsForm() {
   useEffect(() => { load() }, [])
 
   const dirty = JSON.stringify(form) !== JSON.stringify(saved)
-
-  // Same unsaved-changes warning as the other settings forms; in-app navigation isn't caught for the
-  // same reason (a plain <BrowserRouter>, no data router / useBlocker).
-  useEffect(() => {
-    function onBeforeUnload(event) {
-      if (!dirty) return
-      event.preventDefault()
-      event.returnValue = ''
-    }
-    window.addEventListener('beforeunload', onBeforeUnload)
-    return () => window.removeEventListener('beforeunload', onBeforeUnload)
-  }, [dirty])
+  useBeforeUnloadWarning(dirty)
+  registerSettingsFormGuard(formGuardRef, { dirty, saving, save: doSave })
 
   function set(key, value) { setForm((current) => ({ ...current, [key]: value })) }
 
-  async function save(event) {
-    event.preventDefault()
-    if (saving) return
+  async function doSave() {
+    if (saving) return false
     setSaving(true)
     try {
       const { data } = await api.patch('/settings/notifications', form)
@@ -73,12 +63,15 @@ export default function NotificationSettingsForm() {
       setSaved(next)
       setForm(next)
       toast(data.message || 'Settings saved.')
+      return true
     } catch (requestError) {
       toast(getApiError(requestError), 'error')
+      return false
     } finally {
       setSaving(false)
     }
   }
+  function save(event) { event.preventDefault(); doSave() }
 
   function discard() { setForm(saved) }
 

@@ -1085,12 +1085,18 @@ h3 { font-size: 16px; }
 .adm-modal-section-title { margin-top: 2px; font: 800 10px Manrope, sans-serif; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .adm-modal-foot { position: sticky; bottom: 0; z-index: 1; display: flex; justify-content: flex-end; gap: 10px; margin: 14px -20px -20px; padding: 14px 20px; border-top: 1px solid var(--line); background: #fff; border-radius: 0 0 14px 14px; }
 .adm-modal-text { color: var(--ink); font-size: 13px; line-height: 1.6; }
+/* The nav-guard dialog has three labelled actions (vs. the usual Cancel + one primary), so its own
+   footer wraps instead of relying on .adm-modal-foot's single-row flex-end layout. */
+.settings-nav-guard-foot { flex-wrap: wrap; }
+.settings-nav-guard-foot .button { flex: 1 1 auto; }
 
 @media (max-width: 480px) {
   .adm-modal-overlay { padding: 0; align-items: flex-end; }
   .adm-modal { width: 100%; max-height: 92vh; border-radius: 16px 16px 0 0; }
   .adm-modal-head { border-radius: 16px 16px 0 0; }
   .adm-modal-foot { border-radius: 0; }
+  .settings-nav-guard-foot { flex-direction: column; align-items: stretch; }
+  .settings-nav-guard-foot .button { width: 100%; }
   .adm-page-head { flex-direction: column; }
   .adm-toolbar .sort-select { flex: 1 1 100%; }
 }
