@@ -316,7 +316,7 @@ h3 { font-size: 16px; }
 .field .phone-input input, .phone-input input { flex: 1; min-height: 42px; padding-inline: 0; border: 0; outline: 0; background: transparent; box-shadow: none !important; color: var(--ink); font-size: 15px; letter-spacing: .3px; }
 .auth-switch { min-height: 36px; border: 0; background: transparent; color: var(--green); font-size: 14px; font-weight: 800; }
 .otp-instruction { color: var(--muted); font-size: 14px; }
-.otp-input-row { display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); gap: 8px; }
+.otp-input-row { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 12px; max-width: 280px; }
 .otp-input-row input { width: 100%; min-width: 0; height: 50px; border: 1px solid #d9e6d5; border-radius: 9px; background: #fff; color: var(--green); font: 800 20px Manrope,sans-serif; text-align: center; }
 .otp-input-row input:focus { outline: 2px solid #3fae194d; border-color: var(--green); }
 .otp-actions, .auth-form-aside { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }

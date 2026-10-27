@@ -4,6 +4,7 @@ import asyncHandler from '../utils/asyncHandler.js';
 import { hasPermission } from '../config/permissions.js';
 import { sendAuth } from '../utils/token.js';
 
+const OTP_LENGTH = 4;
 const OTP_TTL_MS = 5 * 60_000;
 const COOLDOWN_MS = 30_000;
 const WINDOW_MS = 10 * 60_000;
@@ -43,7 +44,7 @@ function requestState(purpose, mobile) {
 }
 
 // Calls the self-hosted SMS gateway, which generates, sends and verifies the OTP.
-async function callGateway(path, body) {
+async function callGateway(path, body, method = 'POST') {
   const { SMS_GATEWAY_URL: baseUrl, SMS_GATEWAY_KEY: apiKey } = process.env;
   if (!baseUrl || !apiKey) {
     const error = new Error('SMS login is not configured yet. Please use email and password or contact support.');
@@ -53,9 +54,9 @@ async function callGateway(path, body) {
   let response;
   try {
     response = await fetch(`${baseUrl.replace(/\/+$/, '')}${path}`, {
-      method: 'POST',
+      method,
       headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify(body),
+      body: method === 'GET' ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(12_000),
     });
   } catch (cause) {
@@ -105,8 +106,22 @@ async function eligibleMobile(req, res, { findAccount, notFoundMessage }) {
   return { mobile, user };
 }
 
+// The gateway queues SMS even when its phone is offline, so check first and fail with a clear message
+// instead of telling the user an OTP was sent that will never arrive.
+async function assertGatewayPhoneOnline() {
+  const { status, data } = await callGateway('/v1/devices', undefined, 'GET');
+  if (status !== 200) throw gatewayFailure(status, data);
+  if (!Array.isArray(data) || !data.some((device) => device.online)) {
+    console.error('SMS gateway has no online phone. Open the gateway app and press Start gateway.');
+    const error = new Error('SMS service is offline right now. Please try again shortly.');
+    error.statusCode = 503;
+    throw error;
+  }
+}
+
 async function issueOtp(mobile, purpose, message) {
-  const { status, data } = await callGateway('/v1/otp/send', { to: `+91${mobile}`, message });
+  await assertGatewayPhoneOnline();
+  const { status, data } = await callGateway('/v1/otp/send', { to: `+91${mobile}`, message, length: OTP_LENGTH });
   if (status !== 202 || !data.otp_id) throw gatewayFailure(status, data);
   await LoginOtp.findOneAndUpdate(
     { mobile, purpose },
@@ -143,7 +158,6 @@ function makeResendOtp({ purpose, findAccount, notFoundMessage, message }) {
     const { mobile } = result;
     const rate = requestState(purpose, mobile);
     if (rate.error) return res.status(429).json({ message: rate.error });
-    if (!rate.state.sent) return res.status(409).json({ message: 'Request an OTP before resending.' });
     if (rate.state.resendCount >= MAX_RESENDS) return res.status(429).json({ message: 'You have reached the OTP resend limit. Please try again in 10 minutes.' });
     rate.state.lastRequest = rate.now;
     try {
@@ -162,7 +176,7 @@ function makeVerifyOtp({ purpose, findAccount, notFoundMessage, onVerified }) {
     const mobile = normalizeMobile(req.body.mobile);
     const otp = typeof req.body.otp === 'string' ? req.body.otp.trim() : '';
     if (!mobile) return res.status(400).json({ message: 'Enter a valid 10-digit Indian mobile number.' });
-    if (!/^\d{6}$/.test(otp)) return res.status(400).json({ message: 'Enter the 6-digit OTP.' });
+    if (otp.length !== OTP_LENGTH || !/^\d+$/.test(otp)) return res.status(400).json({ message: `Enter the ${OTP_LENGTH}-digit OTP.` });
     const user = await findAccount(mobile);
     if (!user) return res.status(404).json({ message: notFoundMessage });
     const record = await LoginOtp.findOne({ mobile, purpose });
@@ -178,7 +192,7 @@ function makeVerifyOtp({ purpose, findAccount, notFoundMessage, onVerified }) {
 }
 
 const CUSTOMER_NOT_FOUND = 'No account found with this mobile number. Please register first.';
-const CUSTOMER_MESSAGE = 'Your Janai login OTP is {code}. It is valid for 5 minutes. Do not share it with anyone.';
+const CUSTOMER_MESSAGE = 'Janai: {code} is your login OTP. Valid for 5 minutes. Do not share it with anyone.';
 // Deliberately generic: the same response whether the number belongs to no account, a customer, an
 // owner, an inactive staff account, or an active staff account without delivery:view.
 const DELIVERY_NOT_FOUND = 'No delivery staff account found with this mobile number.';

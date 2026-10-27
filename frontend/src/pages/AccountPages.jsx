@@ -24,13 +24,15 @@ export function AuthFrame({ eyebrow, title, description, children, footer, stand
   return <section className="auth-page"><aside className="auth-photo"><img src="/Vegatables.png" alt="" aria-hidden="true" /><div className="auth-photo-copy"><span className="eyebrow"><Leaf size={14} />FRESH · LOCAL · DELIVERED</span><h2>Fresh fruits, vegetables &amp; groceries — at your doorstep.</h2><div className="auth-chips">{authCategories.map(([label, image]) => <span key={label}><img src={image} alt="" />{label}</span>)}</div><ul><li><Truck size={16} />Delivery on the date you choose</li><li><CalendarDays size={16} />Pre-order for later in a few taps</li><li><Sprout size={16} />Bulk orders for businesses &amp; events</li></ul></div></aside><div className="auth-panel">{!standalone && <Link className="auth-back" to="/"><ArrowLeft size={16} />Back to Home</Link>}<div className="auth-panel-inner">{standalone ? <div className="auth-logo"><img src={logoSrc} alt={useCustomLogo ? name : 'Janai'} className={useCustomLogo ? 'is-custom-logo' : undefined} onError={onLogoError} /></div> : <Link className="auth-logo" to="/" aria-label={`${name} home`}><img src={logoSrc} alt={useCustomLogo ? name : 'Janai, Fruits Vegetables Groceries'} className={useCustomLogo ? 'is-custom-logo' : undefined} onError={onLogoError} /></Link>}<span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p className="auth-description">{description}</p>{children}{footer && <div className="auth-footer">{footer}</div>}</div></div></section>
 }
 
+const OTP_LENGTH = 4
+
 export function LoginPage() {
   const { loginWithOtp } = useAuth()
   const toast = useToast()
   const navigate = useNavigate()
   const location = useLocation()
   const [mobile, setMobile] = useState('')
-  const [otp, setOtp] = useState(Array(6).fill(''))
+  const [otp, setOtp] = useState(Array(OTP_LENGTH).fill(''))
   const [otpStep, setOtpStep] = useState(false)
   const [cooldown, setCooldown] = useState(0)
   const [busy, setBusy] = useState(false)
@@ -51,7 +53,7 @@ export function LoginPage() {
       const endpoint = resend ? '/auth/resend-login-otp' : '/auth/send-login-otp'
       const { data } = await api.post(endpoint, { mobile })
       setOtpStep(true)
-      setOtp(Array(6).fill(''))
+      setOtp(Array(OTP_LENGTH).fill(''))
       setCooldown(30)
       if (!resend) window.setTimeout(() => otpRefs.current[0]?.focus(), 0)
       toast(data.message || (resend ? 'A new OTP has been sent.' : 'OTP sent successfully.'))
@@ -61,7 +63,7 @@ export function LoginPage() {
   async function verifyOtp(event) {
     event.preventDefault()
     const code = otp.join('')
-    if (code.length !== 6) { setError('Enter the complete 6-digit OTP.'); return }
+    if (code.length !== OTP_LENGTH) { setError(`Enter the complete ${OTP_LENGTH}-digit OTP.`); return }
     setBusy(true)
     setError('')
     try {
@@ -74,30 +76,30 @@ export function LoginPage() {
   function editOtp(index, value) {
     const digits = value.replace(/\D/g, '')
     if (digits.length > 1) {
-      const pasted = digits.slice(0, 6).split('')
+      const pasted = digits.slice(0, OTP_LENGTH).split('')
       setOtp((current) => current.map((digit, position) => pasted[position] ?? digit))
-      otpRefs.current[Math.min(pasted.length, 5)]?.focus()
+      otpRefs.current[Math.min(pasted.length, OTP_LENGTH - 1)]?.focus()
       return
     }
     setOtp((current) => current.map((digit, position) => position === index ? digits : digit))
-    if (digits && index < 5) otpRefs.current[index + 1]?.focus()
+    if (digits && index < OTP_LENGTH - 1) otpRefs.current[index + 1]?.focus()
   }
 
   function otpKeyDown(index, event) {
     if (event.key === 'Backspace' && !otp[index] && index > 0) otpRefs.current[index - 1]?.focus()
     if (event.key === 'ArrowLeft' && index > 0) otpRefs.current[index - 1]?.focus()
-    if (event.key === 'ArrowRight' && index < 5) otpRefs.current[index + 1]?.focus()
+    if (event.key === 'ArrowRight' && index < OTP_LENGTH - 1) otpRefs.current[index + 1]?.focus()
   }
 
   function changeMobile() {
     setOtpStep(false)
-    setOtp(Array(6).fill(''))
+    setOtp(Array(OTP_LENGTH).fill(''))
     setCooldown(0)
     setError('')
   }
 
   return <AuthFrame eyebrow="FRESHNESS AT YOUR DOORSTEP" title={otpStep ? 'Verify OTP' : 'Welcome Back!'} description={otpStep ? `OTP sent to +91 ${mobile}` : 'Sign in to keep your fresh picks, orders and plans together.'} footer={<>New to Janai? <Link to="/register">Create your account <ArrowRight size={14} /></Link></>}>
-    {otpStep ? <form className="auth-form" onSubmit={verifyOtp}><p className="otp-instruction">Enter the 6-digit code sent to <strong>+91 {mobile}</strong>.</p><div className="otp-input-row" role="group" aria-label="6-digit one-time password">{otp.map((digit, index) => <input key={index} ref={(element) => { otpRefs.current[index] = element }} type="text" inputMode="numeric" autoComplete={index === 0 ? 'one-time-code' : 'off'} aria-label={`OTP digit ${index + 1}`} maxLength={1} value={digit} onChange={(event) => editOtp(index, event.target.value)} onKeyDown={(event) => otpKeyDown(index, event)} onPaste={(event) => { event.preventDefault(); editOtp(index, event.clipboardData.getData('text')) }} />)}</div>{error && <div className="form-error" role="alert">{error}</div>}<button className="button button-primary button-full" disabled={busy || otp.join('').length !== 6}>{busy ? 'Verifying…' : 'Verify OTP'}<ArrowRight size={16} /></button><div className="otp-actions"><button type="button" className="text-link" disabled={busy || cooldown > 0} onClick={() => sendOtp(true)}>{cooldown > 0 ? `Resend OTP in ${cooldown}s` : 'Resend OTP'}</button><button type="button" className="text-link" disabled={busy} onClick={changeMobile}>Change mobile number</button></div></form> : <form className="auth-form" onSubmit={(event) => { event.preventDefault(); sendOtp(false) }}><Field label="Mobile Number" required><PhoneInput value={mobile} onChange={(value) => { setMobile(value); setError('') }} required /></Field>{error && <div className="form-error" role="alert">{error}</div>}<button className="button button-primary button-full" disabled={busy || mobile.length !== 10}>{busy ? 'Sending OTP…' : 'Send OTP'}<ArrowRight size={16} /></button><p className="auth-secure"><Sprout size={14} />Only existing Janai accounts can sign in with OTP.</p></form>}
+    {otpStep ? <form className="auth-form" onSubmit={verifyOtp}><p className="otp-instruction">Enter the {OTP_LENGTH}-digit code sent to <strong>+91 {mobile}</strong>.</p><div className="otp-input-row" role="group" aria-label={`${OTP_LENGTH}-digit one-time password`}>{otp.map((digit, index) => <input key={index} ref={(element) => { otpRefs.current[index] = element }} type="text" inputMode="numeric" autoComplete={index === 0 ? 'one-time-code' : 'off'} aria-label={`OTP digit ${index + 1}`} maxLength={1} value={digit} onChange={(event) => editOtp(index, event.target.value)} onKeyDown={(event) => otpKeyDown(index, event)} onPaste={(event) => { event.preventDefault(); editOtp(index, event.clipboardData.getData('text')) }} />)}</div>{error && <div className="form-error" role="alert">{error}</div>}<button className="button button-primary button-full" disabled={busy || otp.join('').length !== 6}>{busy ? 'Verifying…' : 'Verify OTP'}<ArrowRight size={16} /></button><div className="otp-actions"><button type="button" className="text-link" disabled={busy || cooldown > 0} onClick={() => sendOtp(true)}>{cooldown > 0 ? `Resend OTP in ${cooldown}s` : 'Resend OTP'}</button><button type="button" className="text-link" disabled={busy} onClick={changeMobile}>Change mobile number</button></div></form> : <form className="auth-form" onSubmit={(event) => { event.preventDefault(); sendOtp(false) }}><Field label="Mobile Number" required><PhoneInput value={mobile} onChange={(value) => { setMobile(value); setError('') }} required /></Field>{error && <div className="form-error" role="alert">{error}</div>}<button className="button button-primary button-full" disabled={busy || mobile.length !== 10}>{busy ? 'Sending OTP…' : 'Send OTP'}<ArrowRight size={16} /></button><p className="auth-secure"><Sprout size={14} />Only existing Janai accounts can sign in with OTP.</p></form>}
   </AuthFrame>
 }
 
