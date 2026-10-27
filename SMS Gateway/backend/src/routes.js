@@ -120,7 +120,8 @@ publicApi.post('/otp/send', (req, res) => {
   const recent = db.prepare('SELECT created_at FROM otps WHERE user_id = ? AND phone = ? ORDER BY created_at DESC LIMIT 1').get(req.userId, phone);
   if (recent && Date.now() - recent.created_at < 30_000) throw new ApiError(429, 'wait 30 seconds before requesting another code');
 
-  const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
+  const length = Math.min(8, Math.max(4, Number(req.body?.length) || 6));
+  const code = String(crypto.randomInt(0, 10 ** length)).padStart(length, '0');
   const template = String(req.body?.message || 'Your verification code is {code}. It expires in 5 minutes.');
   const id = crypto.randomUUID();
   const msg = queueSms(req.userId, { to: phone, body: template.replace('{code}', code), deviceId: req.body?.device_id });

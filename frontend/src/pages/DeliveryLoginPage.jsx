@@ -12,13 +12,15 @@ import { Logo } from '../components/Layout'
 // grocery-shopper marketing, not appropriate for a delivery partner) but reuses every shared form/OTP
 // style (.auth-form, .phone-input, .otp-input-row, .button, .form-error) so it still looks and behaves
 // like the rest of Janai. Mirrors LoginPage's OTP flow exactly; only the endpoints and copy differ.
+const OTP_LENGTH = 4
+
 export default function DeliveryLoginPage() {
   const { user, loginWithDeliveryOtp } = useAuth()
   const { businessName } = useBusinessSettings()
   const toast = useToast()
   const navigate = useNavigate()
   const [mobile, setMobile] = useState('')
-  const [otp, setOtp] = useState(Array(6).fill(''))
+  const [otp, setOtp] = useState(Array(OTP_LENGTH).fill(''))
   const [otpStep, setOtpStep] = useState(false)
   const [cooldown, setCooldown] = useState(0)
   const [busy, setBusy] = useState(false)
@@ -46,7 +48,7 @@ export default function DeliveryLoginPage() {
       const endpoint = resend ? '/auth/resend-delivery-otp' : '/auth/send-delivery-otp'
       const { data } = await api.post(endpoint, { mobile })
       setOtpStep(true)
-      setOtp(Array(6).fill(''))
+      setOtp(Array(OTP_LENGTH).fill(''))
       setCooldown(30)
       if (!resend) window.setTimeout(() => otpRefs.current[0]?.focus(), 0)
       toast(data.message || (resend ? 'A new OTP has been sent.' : 'OTP sent successfully.'))
@@ -57,7 +59,7 @@ export default function DeliveryLoginPage() {
     event.preventDefault()
     if (busy) return
     const code = otp.join('')
-    if (code.length !== 6) { setError('Enter the complete 6-digit OTP.'); return }
+    if (code.length !== OTP_LENGTH) { setError(`Enter the complete ${OTP_LENGTH}-digit OTP.`); return }
     setBusy(true)
     setError('')
     try {
@@ -70,24 +72,24 @@ export default function DeliveryLoginPage() {
   function editOtp(index, value) {
     const digits = value.replace(/\D/g, '')
     if (digits.length > 1) {
-      const pasted = digits.slice(0, 6).split('')
+      const pasted = digits.slice(0, OTP_LENGTH).split('')
       setOtp((current) => current.map((digit, position) => pasted[position] ?? digit))
-      otpRefs.current[Math.min(pasted.length, 5)]?.focus()
+      otpRefs.current[Math.min(pasted.length, OTP_LENGTH - 1)]?.focus()
       return
     }
     setOtp((current) => current.map((digit, position) => position === index ? digits : digit))
-    if (digits && index < 5) otpRefs.current[index + 1]?.focus()
+    if (digits && index < OTP_LENGTH - 1) otpRefs.current[index + 1]?.focus()
   }
 
   function otpKeyDown(index, event) {
     if (event.key === 'Backspace' && !otp[index] && index > 0) otpRefs.current[index - 1]?.focus()
     if (event.key === 'ArrowLeft' && index > 0) otpRefs.current[index - 1]?.focus()
-    if (event.key === 'ArrowRight' && index < 5) otpRefs.current[index + 1]?.focus()
+    if (event.key === 'ArrowRight' && index < OTP_LENGTH - 1) otpRefs.current[index + 1]?.focus()
   }
 
   function changeMobile() {
     setOtpStep(false)
-    setOtp(Array(6).fill(''))
+    setOtp(Array(OTP_LENGTH).fill(''))
     setCooldown(0)
     setError('')
   }
@@ -100,12 +102,12 @@ export default function DeliveryLoginPage() {
       <p className="rider-auth-description">{otpStep ? `OTP sent to +91 ${mobile}` : 'Sign in with your registered mobile number to see your assigned deliveries.'}</p>
 
       {otpStep ? <form className="auth-form" onSubmit={verifyOtp}>
-        <p className="otp-instruction">Enter the 6-digit code sent to <strong>+91 {mobile}</strong>.</p>
-        <div className="otp-input-row" role="group" aria-label="6-digit one-time password">
+        <p className="otp-instruction">Enter the {OTP_LENGTH}-digit code sent to <strong>+91 {mobile}</strong>.</p>
+        <div className="otp-input-row" role="group" aria-label={`${OTP_LENGTH}-digit one-time password`}>
           {otp.map((digit, index) => <input key={index} ref={(element) => { otpRefs.current[index] = element }} type="text" inputMode="numeric" autoComplete={index === 0 ? 'one-time-code' : 'off'} aria-label={`OTP digit ${index + 1}`} maxLength={1} value={digit} onChange={(event) => editOtp(index, event.target.value)} onKeyDown={(event) => otpKeyDown(index, event)} onPaste={(event) => { event.preventDefault(); editOtp(index, event.clipboardData.getData('text')) }} />)}
         </div>
         {error && <div className="form-error" role="alert">{error}</div>}
-        <button className="button button-primary button-full" disabled={busy || otp.join('').length !== 6}>{busy ? 'Verifying…' : 'Verify & Sign In'}<ArrowRight size={16} /></button>
+        <button className="button button-primary button-full" disabled={busy || otp.join('').length !== OTP_LENGTH}>{busy ? 'Verifying…' : 'Verify & Sign In'}<ArrowRight size={16} /></button>
         <div className="otp-actions">
           <button type="button" className="text-link" disabled={busy || cooldown > 0} onClick={() => sendOtp(true)}>{cooldown > 0 ? `Resend OTP in ${cooldown}s` : 'Resend OTP'}</button>
           <button type="button" className="text-link" disabled={busy} onClick={changeMobile}>Change mobile number</button>
