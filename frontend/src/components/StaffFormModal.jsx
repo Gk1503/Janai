@@ -62,7 +62,7 @@ export default function StaffFormModal({ staff, onClose, onSaved, fixedPreset })
         </Field>
         {!isEdit && <TemporaryPasswordField value={form.temporaryPassword} onChange={(value) => set('temporaryPassword', value)} />}
         <Field label="Email" optional><input type="email" value={form.email} onChange={(event) => set('email', event.target.value)} autoComplete="off" /></Field>
-        <Field label="Mobile number" optional><PhoneInput value={form.phone} onChange={(value) => set('phone', value)} /></Field>
+        <Field label="Mobile number"><PhoneInput value={form.phone} onChange={(value) => set('phone', value)} /></Field>
         {!isEdit && !fixedPreset && <Field label="Role preset" required hint="A starting point; adjust the permissions below if needed.">
           <select value={form.preset} onChange={(event) => choosePreset(event.target.value)} required>
             <option value="">Choose a role preset…</option>
