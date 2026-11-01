@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import {
-  getGeneralSettings, getNotificationSettings, getOrderSettings,
-  updateGeneralSettings, updateNotificationSettings, updateOrderSettings,
+  getGeneralSettings, getNotificationSettings, getOrderSettings, getPricingSettings,
+  updateGeneralSettings, updateNotificationSettings, updateOrderSettings, updatePricingSettings,
 } from '../controllers/settingsController.js';
 import { requireAuth, requireOwner } from '../middleware/auth.js';
 
@@ -19,5 +19,10 @@ router.patch('/orders-delivery', requireAuth, requireOwner, updateOrderSettings)
 // have no public consumer, so this category is never readable without an owner session.
 router.get('/notifications', requireAuth, requireOwner, getNotificationSettings);
 router.patch('/notifications', requireAuth, requireOwner, updateNotificationSettings);
+
+// Owner-only on BOTH read and write — universal pricing rules are internal markup strategy, never
+// exposed to staff, customers, or the public storefront.
+router.get('/pricing-rules', requireAuth, requireOwner, getPricingSettings);
+router.patch('/pricing-rules', requireAuth, requireOwner, updatePricingSettings);
 
 export default router;

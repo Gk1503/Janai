@@ -4,6 +4,7 @@ import api, { getApiError } from '../services/api'
 import { useToast } from '../context/AppContexts'
 import { Modal } from './UI'
 import { VendorPriceHistoryModal, VendorPurchaseHistoryModal } from './VendorHistoryModals'
+import VendorFormModal from './VendorFormModal'
 
 const MAX_IMAGES = 8
 
@@ -38,6 +39,11 @@ function emptyVendor() {
     id: Math.random().toString(36).slice(2),
     _id: null,
     name: '',
+    // Canonical Vendor collection id (Stage 1 of Vendor Management), or null for a legacy row that
+    // has never been linked. `vendorSearch` is purely local UI state (the selector's search box for
+    // this row) — never sent to the backend.
+    vendorRef: null,
+    vendorSearch: '',
     purchasePrice: '',
     moq: '',
     leadTime: '',
@@ -55,6 +61,8 @@ function toVendorEntries(product) {
     id: vendor._id || Math.random().toString(36).slice(2),
     _id: vendor._id || null,
     name: vendor.name || '',
+    vendorRef: vendor.vendorRef || null,
+    vendorSearch: '',
     purchasePrice: vendor.purchasePrice ?? '',
     moq: vendor.moq || '',
     leadTime: vendor.leadTime || '',
@@ -72,6 +80,90 @@ export function capitalizeFirst(value) {
 
 function toImageEntries(product) {
   return (product?.images || []).map((src) => ({ id: Math.random().toString(36).slice(2), src }))
+}
+
+// Universal Pricing (Settings → Pricing). Matches a product's purchase price against the owner's
+// saved rules — minimum inclusive, maximum exclusive, same convention as the backend
+// (backend/utils/settingsValidation.js's normalizePricingRules) and the Settings UI
+// (UniversalPricingSettingsForm.jsx). Pure and exported so matching/calculation can be unit-tested
+// without rendering the modal or hitting the network.
+export function matchUniversalPricingRule(rules, purchasePrice) {
+  if (!Array.isArray(rules) || !Number.isFinite(purchasePrice) || purchasePrice < 0) return null
+  return rules.find((rule) => {
+    if (purchasePrice < rule.minPurchasePrice) return false
+    return rule.maxPurchasePrice == null || purchasePrice < rule.maxPurchasePrice
+  }) || null
+}
+
+// Same formula as the existing individual calculator just below: purchase + fixed + purchase*percent/100.
+// Returns null when there is nothing to suggest (no matching rule), so the caller can tell "no
+// suggestion" apart from "a suggestion of ₹0".
+export function calculateUniversalSuggestion(rule, purchasePrice) {
+  if (!rule || !Number.isFinite(purchasePrice) || purchasePrice < 0) return null
+  const fixedProfit = Number(rule.fixedProfit) || 0
+  const profitPercent = Number(rule.profitPercent) || 0
+  const percentProfit = (purchasePrice * profitPercent) / 100
+  return { fixedProfit, profitPercent, percentProfit, totalProfit: fixedProfit + percentProfit, suggestedPrice: purchasePrice + fixedProfit + percentProfit }
+}
+
+export function formatUniversalRange(rule) {
+  if (!rule) return ''
+  return rule.maxPurchasePrice == null ? `₹${rule.minPurchasePrice} onwards` : `₹${rule.minPurchasePrice}–₹${rule.maxPurchasePrice}`
+}
+
+// Whether the "applied" state (success indicator + Undo) is still accurate, re-derived fresh from
+// current state rather than stored as its own flag — so it can never go stale. `snapshot` is
+// {previousPrice, appliedValue} from the moment "Use This" (universal) was clicked, or null if nothing
+// has been applied since the last Undo (or since a prior apply became stale). True only while every one
+// of these still holds: something was applied, the Selling Price field still holds exactly what was
+// applied (a manual edit afterwards breaks this), and today's universal suggestion still rounds to that
+// same applied value (a purchase-price change that moves the matched rule, or the suggestion itself,
+// also breaks this).
+export function isUniversalSuggestionApplied(formPrice, universalSuggestion, snapshot) {
+  return Boolean(
+    snapshot
+    && universalSuggestion
+    && formPrice === snapshot.appliedValue
+    && universalSuggestion.suggestedPrice.toFixed(2) === snapshot.appliedValue
+  )
+}
+
+// Vendor & Procurement — central vendor selection (Stage 3 of Vendor Management). A row is:
+//   'new'    — never saved on this product (no embedded _id yet): identity must come from the
+//              central-vendor selector (or the plain-text fallback if that selector is unavailable).
+//   'linked' — already saved AND already carries a canonical vendorRef: resolves to that central
+//              vendor, shown via the same selector, pre-selected.
+//   'legacy' — already saved but has no vendorRef (a pre-Stage-3 product, or one never linked):
+//              left exactly as before Stage 3 — a plain editable name field, never auto-matched to
+//              any central vendor by name.
+// Pure and exported so this can be unit-tested without rendering the modal.
+export function vendorRowMode(vendor) {
+  if (!vendor?._id) return 'new'
+  return vendor.vendorRef ? 'linked' : 'legacy'
+}
+
+// The options a row's selector should offer: every Active central vendor matching the row's own
+// search text, plus — unconditionally, regardless of status or search text — whichever vendor the
+// row is already linked to. This is what keeps an already-assigned Inactive vendor visibly selected
+// (never silently dropped) while still excluding every OTHER Inactive vendor from the pick-list for a
+// NEW assignment.
+export function buildVendorOptions(centralVendors, search, currentVendorRef) {
+  const query = String(search || '').trim().toLowerCase()
+  const matchesSearch = (vendor) => !query
+    || vendor.name.toLowerCase().includes(query)
+    || (vendor.contactPerson || '').toLowerCase().includes(query)
+    || (vendor.phone || '').toLowerCase().includes(query)
+  const options = (centralVendors || []).filter((vendor) => vendor.status === 'Active' && matchesSearch(vendor))
+  if (currentVendorRef && !options.some((vendor) => String(vendor._id) === String(currentVendorRef))) {
+    const current = (centralVendors || []).find((vendor) => String(vendor._id) === String(currentVendorRef))
+    if (current) options.unshift(current)
+  }
+  return options
+}
+
+export function resolveCentralVendor(centralVendors, vendorRef) {
+  if (!vendorRef) return null
+  return (centralVendors || []).find((vendor) => String(vendor._id) === String(vendorRef)) || null
 }
 
 export function readImageAsDataUrl(file, maxDimension = 900, quality = 0.82) {
@@ -107,7 +199,32 @@ export default function ProductFormModal({ product, onClose, onSaved }) {
   const [fixedAmount, setFixedAmount] = useState('')
   const [profitPercent, setProfitPercent] = useState('')
   const [gstRate, setGstRate] = useState(0)
+  // Universal Pricing rules, owner-only. Fetched once on mount (same pattern as /categories just
+  // below) — never refetched per keystroke. A 403 (a products:manage staff member, not the owner)
+  // is expected and handled separately from a genuine load failure: the section simply doesn't
+  // render for them, never exposing rule data, and never shown as a broken product form.
+  const [universalRules, setUniversalRules] = useState([])
+  const [universalRulesLoading, setUniversalRulesLoading] = useState(true)
+  const [universalRulesForbidden, setUniversalRulesForbidden] = useState(false)
+  const [universalRulesError, setUniversalRulesError] = useState('')
+  // Snapshot taken at the moment "Use This" (universal) is clicked: the exact prior form.price (which
+  // may be '') to restore on Undo, and the value that was written so the "applied" display can tell
+  // whether it's still accurate. Never read directly for display — see isUniversalApplied below, which
+  // re-derives applied-ness from current state every render instead of trusting a stale flag.
+  const [appliedSnapshot, setAppliedSnapshot] = useState(null)
   const [vendors, setVendors] = useState(() => toVendorEntries(product))
+  // Central Vendor collection (Stage 1), owner/products:manage/inventory:update only — same
+  // permission model as the existing per-product vendor data. Fetched once on mount, same pattern as
+  // /categories and /settings/pricing-rules above. A 403 (a products:view-only staff member, who can
+  // already see embedded vendor data via canViewSupplierCosts but cannot manage it) is expected and
+  // handled separately from a genuine load failure: either way, the row simply falls back to the
+  // pre-Stage-3 plain-text name field rather than breaking the form.
+  const [centralVendors, setCentralVendors] = useState([])
+  const [centralVendorsLoading, setCentralVendorsLoading] = useState(true)
+  const [centralVendorsForbidden, setCentralVendorsForbidden] = useState(false)
+  const [centralVendorsError, setCentralVendorsError] = useState('')
+  // The row currently creating a new central vendor via the reused VendorFormModal, or null.
+  const [quickAddVendorTarget, setQuickAddVendorTarget] = useState(null)
   const [historyTarget, setHistoryTarget] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -119,6 +236,34 @@ export default function ProductFormModal({ product, onClose, onSaved }) {
       setCategories(data.categories)
       setForm((current) => current.category ? current : { ...current, category: data.categories.find((category) => category.status === 'Active')?.name || '' })
     }).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    api.get('/settings/pricing-rules')
+      .then(({ data }) => { if (active) setUniversalRules(Array.isArray(data.settings?.pricingRules) ? data.settings.pricingRules : []) })
+      .catch((requestError) => {
+        if (!active) return
+        // A staff member with products:manage can open this form; universal rules stay owner-only, so
+        // this 403 is expected for them, not a product-form failure — the section just won't render.
+        if (requestError.response?.status === 403) setUniversalRulesForbidden(true)
+        else setUniversalRulesError(getApiError(requestError))
+      })
+      .finally(() => { if (active) setUniversalRulesLoading(false) })
+    return () => { active = false }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    api.get('/vendors')
+      .then(({ data }) => { if (active) setCentralVendors(Array.isArray(data.vendors) ? data.vendors : []) })
+      .catch((requestError) => {
+        if (!active) return
+        if (requestError.response?.status === 403) setCentralVendorsForbidden(true)
+        else setCentralVendorsError(getApiError(requestError))
+      })
+      .finally(() => { if (active) setCentralVendorsLoading(false) })
+    return () => { active = false }
   }, [])
 
   function setField(field, value) {
@@ -206,7 +351,29 @@ export default function ProductFormModal({ product, onClose, onSaved }) {
     setVendors((current) => [...current, emptyVendor()])
   }
   function removeVendor(id) {
+    // Local-state only: the removed row is simply left out of the next save's vendors array. This
+    // never calls any vendor API, so it can never delete the central Vendor record (a separate
+    // collection entirely) or any VendorPurchase/VendorPriceHistory row.
     setVendors((current) => current.filter((vendor) => vendor.id !== id))
+  }
+
+  // Selecting a central vendor sets vendorRef AND snapshots its current name into the row's own
+  // `name` — the same snapshot convention VendorPurchase/VendorPriceHistory already use for
+  // `vendorName`, so price-history logging (which reads vendor.name from the saved product) keeps
+  // working unchanged. Picking the blank option clears vendorRef back to null.
+  function selectCentralVendor(id, vendorId) {
+    const central = centralVendors.find((vendor) => String(vendor._id) === String(vendorId))
+    setVendors((current) => current.map((vendor) => (vendor.id === id ? { ...vendor, vendorRef: vendorId || null, name: central ? central.name : vendor.name } : vendor)))
+  }
+
+  function handleCentralVendorCreated(createdVendor) {
+    const targetId = quickAddVendorTarget
+    setQuickAddVendorTarget(null)
+    if (!targetId || !createdVendor) return
+    // The create-vendor API itself is the only thing that can add a new central vendor — this just
+    // selects the one it already created, it never calls createVendor a second time.
+    setCentralVendors((current) => [...current, createdVendor])
+    setVendors((current) => current.map((vendor) => (vendor.id === targetId ? { ...vendor, vendorRef: createdVendor._id, name: createdVendor.name } : vendor)))
   }
 
   const purchase = Number(purchasePrice) || 0
@@ -217,6 +384,26 @@ export default function ProductFormModal({ product, onClose, onSaved }) {
   const marginPct = selling > 0 ? (profitAmount / selling) * 100 : 0
   const finalPriceInclGst = selling * (1 + (Number(gstRate) || 0) / 100)
   const summaryTone = (value) => (value > 0 ? ' is-positive' : value < 0 ? ' is-negative' : '')
+
+  // Universal Pricing — entirely separate from the individual calculator above: its own derived
+  // values, its own "Use This" below, and it never reads or writes purchasePrice/fixedAmount/
+  // profitPercent/suggested. The only thing shared is the purchase-price figure itself and the
+  // selling-price field that either "Use This" button may (only on an explicit click) write into.
+  const matchedUniversalRule = matchUniversalPricingRule(universalRules, purchase)
+  const universalSuggestion = calculateUniversalSuggestion(matchedUniversalRule, purchase)
+
+  const isUniversalApplied = isUniversalSuggestionApplied(form.price, universalSuggestion, appliedSnapshot)
+  function applyUniversalSuggestion() {
+    if (!universalSuggestion) return
+    const appliedValue = universalSuggestion.suggestedPrice.toFixed(2)
+    setAppliedSnapshot({ previousPrice: form.price, appliedValue })
+    setField('price', appliedValue)
+  }
+  function undoUniversalSuggestion() {
+    if (!appliedSnapshot) return
+    setField('price', appliedSnapshot.previousPrice)
+    setAppliedSnapshot(null)
+  }
 
   const activeCategories = categories.filter((category) => category.status === 'Active')
   const categoryOptions = activeCategories.some((category) => category.name === form.category) || !form.category
@@ -237,6 +424,7 @@ export default function ProductFormModal({ product, onClose, onSaved }) {
         .map((vendor) => ({
           ...(vendor._id ? { _id: vendor._id } : {}),
           name: vendor.name.trim(),
+          ...(vendor.vendorRef ? { vendorRef: vendor.vendorRef } : {}),
           purchasePrice: Number(vendor.purchasePrice) || 0,
           moq: vendor.moq,
           leadTime: vendor.leadTime,
@@ -342,6 +530,39 @@ export default function ProductFormModal({ product, onClose, onSaved }) {
 
           <p className="adm-form-note">Purchase price, fixed amount, profit % and GST are calculator helpers for this screen only — only the Selling Price above is saved to the product right now.</p>
         </div>
+
+        {/* Owner-only (Settings → Pricing). Entirely separate from the calculator above: its own data,
+            its own "Use This", and it is simply not rendered at all for a products:manage staff member
+            (a 403 here is expected, not a form failure) — never revealing rule data to them. */}
+        {!universalRulesForbidden && <div className="adm-soft-section adm-universal-pricing">
+          <div className="adm-form-section-head"><IndianRupee size={16} /><h3>Universal Pricing</h3></div>
+          <p className="adm-form-section-description">A separate suggestion from the saved Universal Pricing rules (Settings → Pricing), based on the same purchase price above. Applying it is optional, and separate from the individual calculator.</p>
+
+          {universalRulesLoading ? <p className="adm-muted">Loading universal pricing rules…</p>
+            : universalRulesError ? <p className="adm-muted">Universal pricing rules could not be loaded right now.</p>
+            : !universalRules.length ? <p className="adm-muted">No universal pricing rules have been configured.</p>
+            : purchase <= 0 ? <p className="adm-muted">Enter a purchase price above to see a universal pricing suggestion.</p>
+            : !matchedUniversalRule ? <p className="adm-muted">No universal pricing rule matches this purchase price.</p>
+            : <>
+              <p className="adm-muted">Matched range: <strong>{formatUniversalRange(matchedUniversalRule)}</strong></p>
+              <div className="adm-summary-row">
+                <div className="adm-summary-chip"><small>Fixed profit</small><strong>₹{universalSuggestion.fixedProfit.toFixed(2)}</strong></div>
+                <div className="adm-summary-chip"><small>Percentage profit</small><strong>₹{universalSuggestion.percentProfit.toFixed(2)}</strong></div>
+                <div className="adm-summary-chip"><small>Total profit</small><strong>₹{universalSuggestion.totalProfit.toFixed(2)}</strong></div>
+              </div>
+              {isUniversalApplied ? (
+                <div className="adm-suggested-box">
+                  <div><span>Applied</span><strong>₹{appliedSnapshot.appliedValue} applied to Selling Price</strong></div>
+                  <button type="button" className="button button-outline" onClick={undoUniversalSuggestion}>Undo</button>
+                </div>
+              ) : (
+                <div className="adm-suggested-box">
+                  <div><span>Universal suggested selling price</span><strong>₹{universalSuggestion.suggestedPrice.toFixed(2)}</strong></div>
+                  <button type="button" className="button button-outline" onClick={applyUniversalSuggestion}>Use This</button>
+                </div>
+              )}
+            </>}
+        </div>}
       </div>
 
       <div className="adm-form-section">
@@ -369,7 +590,11 @@ export default function ProductFormModal({ product, onClose, onSaved }) {
         <p className="adm-form-section-description">Manage the suppliers you purchase this product from, including purchase price, minimum order quantity, delivery time, and procurement details.</p>
         <div className="adm-soft-section">
           <div className="adm-vendor-list">
-            {vendors.map((vendor, index) => <div className="adm-vendor-card" key={vendor.id}>
+            {vendors.map((vendor, index) => {
+              const mode = vendorRowMode(vendor)
+              const selectorAvailable = !centralVendorsForbidden && !centralVendorsError
+              const resolvedCentralVendor = resolveCentralVendor(centralVendors, vendor.vendorRef)
+              return <div className="adm-vendor-card" key={vendor.id}>
               <div className="adm-vendor-card-head">
                 <strong>Vendor {index + 1}</strong>
                 <div className="adm-vendor-card-actions">
@@ -382,7 +607,26 @@ export default function ProductFormModal({ product, onClose, onSaved }) {
               </div>
 
               <div className="adm-form-grid">
-                <label className="field field-wide"><span>Vendor / supplier name</span><input value={vendor.name} onChange={(event) => updateVendor(vendor.id, 'name', event.target.value)} placeholder="e.g. Rajesh Vegetable Supplier" /></label>
+                {mode !== 'legacy' && selectorAvailable ? (
+                  <div className="field field-wide">
+                    <span>Vendor / supplier</span>
+                    {mode === 'linked' && (
+                      <p className="adm-muted">
+                        {resolvedCentralVendor ? <>Linked to <strong>{resolvedCentralVendor.name}</strong>{resolvedCentralVendor.status === 'Inactive' ? ' (Inactive)' : ''}{resolvedCentralVendor.contactPerson ? ` — ${resolvedCentralVendor.contactPerson}` : ''}{resolvedCentralVendor.phone ? `, ${resolvedCentralVendor.phone}` : ''}</> : 'Loading linked vendor…'}
+                      </p>
+                    )}
+                    <input type="text" value={vendor.vendorSearch} onChange={(event) => updateVendor(vendor.id, 'vendorSearch', event.target.value)} placeholder="Search vendors by name, contact or phone…" />
+                    <select value={vendor.vendorRef || ''} onChange={(event) => selectCentralVendor(vendor.id, event.target.value)}>
+                      <option value="">{centralVendorsLoading ? 'Loading vendors…' : 'Select a vendor…'}</option>
+                      {buildVendorOptions(centralVendors, vendor.vendorSearch, vendor.vendorRef).map((central) => (
+                        <option key={central._id} value={central._id}>{central.name}{central.status === 'Inactive' ? ' (Inactive)' : ''}{central.contactPerson ? ` · ${central.contactPerson}` : ''}{central.phone ? ` · ${central.phone}` : ''}</option>
+                      ))}
+                    </select>
+                    <button type="button" className="text-link" onClick={() => setQuickAddVendorTarget(vendor.id)}><Plus size={14} /> Add New Vendor</button>
+                  </div>
+                ) : (
+                  <label className="field field-wide"><span>Vendor / supplier name</span><input value={vendor.name} onChange={(event) => updateVendor(vendor.id, 'name', event.target.value)} placeholder="e.g. Rajesh Vegetable Supplier" /></label>
+                )}
                 <label className="field">
                   <span>Purchase price (₹)</span>
                   <div className="adm-price-suffix"><input type="number" min="0" step="0.01" value={vendor.purchasePrice} onChange={(event) => updateVendor(vendor.id, 'purchasePrice', event.target.value)} placeholder="e.g. 45" /><small>/ {form.unit}</small></div>
@@ -400,7 +644,8 @@ export default function ProductFormModal({ product, onClose, onSaved }) {
                 <div className="adm-option-copy"><strong>Preferred vendor</strong><p>Use this supplier as the primary vendor for this product.</p></div>
                 <button type="button" role="switch" aria-checked={vendor.preferred} aria-label={`Preferred vendor ${index + 1}`} className={`adm-switch${vendor.preferred ? ' is-on' : ''}`} onClick={() => togglePreferredVendor(vendor.id)}><span className="adm-switch-thumb" /></button>
               </div>
-            </div>)}
+            </div>
+            })}
           </div>
 
           <button type="button" className="text-link" onClick={addVendor}><Plus size={15} /> {vendors.length ? 'Add Another Vendor' : 'Add Vendor'}</button>
@@ -418,5 +663,6 @@ export default function ProductFormModal({ product, onClose, onSaved }) {
     </Modal>
     {historyTarget?.mode === 'price' && <VendorPriceHistoryModal productId={product._id} vendorId={historyTarget.vendorId} vendorName={historyTarget.vendorName} onClose={() => setHistoryTarget(null)} />}
     {historyTarget?.mode === 'purchase' && <VendorPurchaseHistoryModal productId={product._id} vendorId={historyTarget.vendorId} vendorName={historyTarget.vendorName} unit={form.unit} onClose={() => setHistoryTarget(null)} />}
+    {quickAddVendorTarget && <VendorFormModal vendor={null} onClose={() => setQuickAddVendorTarget(null)} onSaved={handleCentralVendorCreated} />}
   </>
 }

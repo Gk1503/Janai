@@ -45,11 +45,23 @@ const notificationSettingsSchema = new mongoose.Schema({
 	orderCancelled: { type: Boolean, default: false },
 }, { _id: false });
 
+// Universal Pricing: owner-configured markup rules matched against a product's purchase price.
+// Boundary convention: minPurchasePrice is inclusive, maxPurchasePrice is exclusive; a rule with no
+// maxPurchasePrice (null) is the open-ended final range. Keeps a normal auto-assigned _id (like
+// Product.js's vendorSchema) since this is a repeatable, owner-editable list — unlike the single
+// fixed-shape sub-objects below (address, operating hours, orderSettings), which use `_id: false`.
+const pricingRuleSchema = new mongoose.Schema({
+	minPurchasePrice: { type: Number, required: true, min: 0 },
+	maxPurchasePrice: { type: Number, min: 0, default: null },
+	fixedProfit: { type: Number, min: 0, default: 0 },
+	profitPercent: { type: Number, min: 0, default: 0 },
+}, { timestamps: true });
+
 // Single canonical business-settings document. Controllers always read/write via Settings.findOne({})
 // (or an upsert against {}), never by a caller-supplied id, so a second document can never be created
-// through normal use. `general`, `orderSettings` and `notifications` are the categories implemented so
-// far (Payments and Security & System are later steps) but each lives in its own sub-object so those can
-// be added as siblings later without disturbing these.
+// through normal use. `general`, `orderSettings`, `notifications` and `pricingRules` are the categories
+// implemented so far (Payments and Security & System are later steps) but each lives in its own
+// sub-object so those can be added as siblings later without disturbing these.
 const settingsSchema = new mongoose.Schema({
 	general: {
 		businessName: { type: String, trim: true, default: 'Janai' },
@@ -63,6 +75,9 @@ const settingsSchema = new mongoose.Schema({
 	},
 	orderSettings: { type: orderSettingsSchema, default: () => ({}) },
 	notifications: { type: notificationSettingsSchema, default: () => ({}) },
+	// Never configured = no universal rules = no universal suggestion shown anywhere. Existing product
+	// prices are never touched by this field; nothing reads it except the Settings API itself.
+	pricingRules: { type: [pricingRuleSchema], default: [] },
 	updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
 }, { timestamps: true });
 

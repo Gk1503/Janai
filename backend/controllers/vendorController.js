@@ -1,4 +1,5 @@
 import Product from '../models/Product.js';
+import Vendor from '../models/Vendor.js';
 import VendorPriceHistory from '../models/VendorPriceHistory.js';
 import VendorPurchase from '../models/VendorPurchase.js';
 import asyncHandler from '../utils/asyncHandler.js';
@@ -40,6 +41,20 @@ export const createPurchase = asyncHandler(async (req, res) => {
   const { productId, vendorId } = req.params;
   const { product, vendor, error } = await findProductVendor(productId, vendorId);
   if (error) return res.status(error.status).json({ message: error.message });
+
+  // Stage 6.1: the Vendor Detail Page's "Record Purchase" already disables itself for an Inactive
+  // central vendor, but that's a frontend-only guard and can be bypassed by calling this endpoint
+  // directly — so it's enforced here too. `vendor` above is the embedded subdocument (found by its
+  // own _id, never confused with a central Vendor's _id); `vendor.vendorRef`, if present, is the
+  // separate central Vendor it's linked to (Stage 1+). A legacy row with no vendorRef, or one whose
+  // vendorRef no longer resolves to a real document, keeps the exact pre-existing behavior — this is
+  // an added restriction only for a row genuinely linked to an Inactive central vendor.
+  if (vendor.vendorRef) {
+    const centralVendor = await Vendor.findById(vendor.vendorRef);
+    if (centralVendor && centralVendor.status === 'Inactive') {
+      return res.status(400).json({ message: 'This vendor is inactive. Reactivate it before recording a new purchase.' });
+    }
+  }
 
   const { purchaseDate, quantity, unit, rate, invoiceNumber = '', notes = '', status = 'Ordered' } = req.body;
   const qty = Number(quantity);

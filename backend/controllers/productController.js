@@ -21,6 +21,11 @@ function sanitizeVendors(vendors) {
       notes: String(vendor?.notes || '').trim(),
     };
     if (vendor?._id && mongoose.isValidObjectId(vendor._id)) clean._id = vendor._id;
+    // Optional and additive (Stage 1 of Vendor Management): only set when a genuine Vendor id is sent.
+    // Nothing in this stage sends it yet (ProductFormModal is untouched here), so existing create/edit
+    // behavior is unchanged — this only makes the field reachable through the existing save path for
+    // whenever a later stage starts sending it.
+    if (vendor?.vendorRef && mongoose.isValidObjectId(vendor.vendorRef)) clean.vendorRef = vendor.vendorRef;
     return clean;
   });
 }
