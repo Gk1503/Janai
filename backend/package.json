@@ -7,9 +7,10 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "seed": "node seed.js",
-    "test": "node --test test/phase1.test.js test/phase2.test.js test/phase3.test.js test/frontend-permissions.test.js test/phase6.test.js test/phase7.test.js test/phase8.test.js test/phase9.test.js test/phase10.test.js test/phase11.test.js",
+    "test": "node --test test/phase1.test.js test/phase2.test.js test/phase3.test.js test/frontend-permissions.test.js test/phase6.test.js test/phase7.test.js test/phase8.test.js test/phase9.test.js test/phase10.test.js test/phase11.test.js test/phase12.test.js test/phase13.test.js test/phase14.test.js test/phase15.test.js test/phase16.test.js",
     "migrate:user-indexes": "node scripts/migrateUserIndexes.js",
-    "migrate:login-otp-indexes": "node scripts/migrateLoginOtpIndexes.js"
+    "migrate:login-otp-indexes": "node scripts/migrateLoginOtpIndexes.js",
+    "vendors:backfill:dry-run": "node scripts/vendorBackfill.js --dry-run"
   },
   "keywords": [],
   "author": "",
@@ -19,6 +20,7 @@
     "bcrypt": "^6.0.0",
     "cors": "^2.8.6",
     "dotenv": "^18.0.5",
+    "exceljs": "^4.4.0",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.10.4"

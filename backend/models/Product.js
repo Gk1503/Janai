@@ -2,6 +2,10 @@ import mongoose from 'mongoose';
 
 const vendorSchema = new mongoose.Schema({
   name: { type: String, trim: true, default: '' },
+  // Optional link to a central Vendor record (backend/models/Vendor.js). Absent on every embedded
+  // vendor created before this field existed, and still optional going forward — nothing here or in
+  // productController.js requires it, so existing products, history and procurement are unaffected.
+  vendorRef: { type: mongoose.Schema.Types.ObjectId, ref: 'Vendor', default: null },
   purchasePrice: { type: Number, min: 0, default: 0 },
   moq: { type: String, trim: true, default: '' },
   leadTime: { type: String, trim: true, default: '' },

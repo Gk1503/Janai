@@ -90,8 +90,10 @@ describe('sidebar filtering', () => {
   it('staff see only what their permissions allow and empty groups disappear', () => {
     assert.deepEqual(visible(staff('orders:view', 'orders:update_status')), ['/admin/orders']);
     assert.deepEqual(visible(staff('preorders:view')), ['/admin/pre-orders']);
-    assert.deepEqual(visible(staff('products:view', 'inventory:update')), ['/admin/products']);
-    assert.deepEqual(visible(staff('inventory:update')), ['/admin/products']);
+    // Also matches Vendors (BUSINESS group) since Stage 2 of Vendor Management: both fixtures hold
+    // inventory:update, which Vendors' access rule (any: products:manage/inventory:update) accepts.
+    assert.deepEqual(visible(staff('products:view', 'inventory:update')), ['/admin/products', '/admin/vendors']);
+    assert.deepEqual(visible(staff('inventory:update')), ['/admin/products', '/admin/vendors']);
     assert.deepEqual(visible(staff('categories:manage')), ['/admin/categories']);
     assert.deepEqual(visible(staff('delivery:view')), ['/admin/delivery']);
     assert.deepEqual(visible(staff()), []);

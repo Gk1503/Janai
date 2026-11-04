@@ -21,6 +21,8 @@ import AdminCategoriesPage from './pages/AdminCategoriesPage'
 import AdminCustomerDetailPage from './pages/AdminCustomerDetailPage'
 import AdminCustomersPage from './pages/AdminCustomersPage'
 import AdminProductsPage from './pages/AdminProductsPage'
+import AdminVendorsPage from './pages/AdminVendorsPage'
+import AdminVendorDetailPage from './pages/AdminVendorDetailPage'
 import { AdminBulkOrdersPage, AdminOrdersPage, AdminPreOrdersPage } from './pages/AdminOrderPages'
 import { AboutPage, AdminLoginPage, ContactPage, ForgotPasswordPage, LoginPage, RegisterPage } from './pages/AccountPages'
 import BulkOrdersPage from './pages/BulkOrdersPage'
@@ -73,6 +75,12 @@ export default function App() {
         <Route path="admin/account" element={<AdminAccountPage />} />
         <Route element={<RequirePermission any={['products:view', 'inventory:update']} />}>
           <Route path="admin/products" element={<AdminProductsPage />} />
+        </Route>
+        {/* Same permission model as the existing per-product vendor data (productController.js's
+            canViewSupplierCosts / productRoutes.js's vendorRead). */}
+        <Route element={<RequirePermission any={['products:manage', 'inventory:update']} />}>
+          <Route path="admin/vendors" element={<AdminVendorsPage />} />
+          <Route path="admin/vendors/:vendorId" element={<AdminVendorDetailPage />} />
         </Route>
         <Route element={<RequirePermission any={['orders:view']} />}>
           {/* :view is the status tab (pending, processing, ...); the list stays mounted while switching tabs */}
