@@ -25,6 +25,12 @@ const productSchema = new mongoose.Schema({
   preOrderAvailable: { type: Boolean, default: false },
   bulkAvailable: { type: Boolean, default: false },
   featured: { type: Boolean, default: false },
+  // Eligibility for the Deals Management pickers. Marking a product here is NOT a discount and does not put
+  // it on the homepage; a promotion (Promotion.products) still has to include it.
+  dealPlacements: {
+    bestDeals: { type: Boolean, default: false },
+    seasonalDeals: { type: Boolean, default: false },
+  },
   vendors: { type: [vendorSchema], default: [] },
 }, { timestamps: true });
 

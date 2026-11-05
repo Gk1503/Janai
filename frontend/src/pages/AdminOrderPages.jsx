@@ -27,7 +27,10 @@ const NEXT_STEP = {
 }
 const ACTIVE_STATUSES = ['placed', 'confirmed', 'preparing', 'out_for_delivery']
 // Backend BulkOrder.status values (models/BulkOrder.js).
-const BULK_STATUSES = ['Pending', 'Reviewing', 'Approved', 'Rejected', 'Completed']
+const BULK_STATUSES = ['Pending', 'Reviewing', 'Quoted', 'Approved', 'Processing', 'Completed', 'Rejected', 'Cancelled']
+// Mirrors BULK_TRANSITIONS in utils/bulkOrderWorkflow.js, which the backend enforces. Cancelled is customer-only.
+const BULK_NEXT = { Pending: ['Reviewing', 'Rejected'], Reviewing: ['Rejected'], Quoted: ['Reviewing', 'Approved', 'Rejected'], Approved: ['Processing', 'Rejected'], Processing: ['Completed'] }
+const BULK_QUOTABLE = ['Pending', 'Reviewing', 'Quoted']
 const PAYMENT_METHODS = { cod: 'Cash on Delivery', online: 'Online payment' }
 
 // Status tabs inside All Orders. "Processing" groups the backend's confirmed and preparing statuses.
@@ -54,7 +57,7 @@ const PREORDER_VIEWS = {
 const BULK_TABS = [{ key: 'all', label: 'All', to: '/admin/bulk-orders' }, { key: 'requests', label: 'Requests', to: '/admin/bulk-orders/requests' }]
 const BULK_VIEWS = {
   all: { title: 'All Bulk Orders', description: 'Every bulk order request received.', statusFilter: true },
-  requests: { title: 'Requests', description: 'New requests awaiting a decision (Pending or Reviewing).', statuses: ['Pending', 'Reviewing'] },
+  requests: { title: 'Requests', description: 'Requests awaiting a quotation or a decision (Pending, Reviewing or Quoted).', statuses: ['Pending', 'Reviewing', 'Quoted'] },
 }
 
 const ORDER_DATE_FILTERS = [{ value: 'all', label: 'Any order date' }, { value: 'today', label: 'Ordered today' }, { value: '7', label: 'Last 7 days' }, { value: '30', label: 'Last 30 days' }]
@@ -217,6 +220,7 @@ export function OrderDetailsModal({ order, onClose, onStatusChange, busy, readOn
   const address = order.deliveryAddress || {}
   const subtotal = itemsSubtotal(order)
   const deliveryCharge = Math.max(0, Number(order.totalAmount) - subtotal)
+  const offerDiscount = Math.round((order.items || []).reduce((sum, item) => sum + (item.discountTotal || 0), 0) * 100) / 100
   const isPreorder = order.orderType === 'preorder'
   function save() {
     if (status === order.orderStatus) return
@@ -267,7 +271,7 @@ export function OrderDetailsModal({ order, onClose, onStatusChange, busy, readOn
       <h3 className="adm-modal-section-title">Items ({order.items?.length || 0})</h3>
       <ul className="adm-order-items">{(order.items || []).map((item, index) => <li key={`${item.name}-${index}`}>
         <ProductImage product={item} alt={item.name} />
-        <span className="adm-cell-stack"><strong>{item.name}</strong><small>{item.quantity} {item.unit} × {formatPrice(item.price)} / {item.unit}</small></span>
+        <span className="adm-cell-stack"><strong>{item.name}</strong><small>{item.quantity} {item.unit} × {formatPrice(item.price)} / {item.unit}{item.originalPrice > item.price && ` (list price ${formatPrice(item.originalPrice)})`}</small>{item.promotion?.title && <small>Offer: {item.promotion.title}</small>}</span>
         <strong>{formatPrice(item.price * item.quantity)}</strong>
       </li>)}</ul>
     </section>
@@ -283,7 +287,9 @@ export function OrderDetailsModal({ order, onClose, onStatusChange, busy, readOn
       <section className="adm-detail-section">
         <h3 className="adm-modal-section-title">Summary</h3>
         <dl className="adm-detail-list adm-summary-list">
-          <DetailRow label="Subtotal">{formatPrice(subtotal)}</DetailRow>
+          {offerDiscount > 0 && <DetailRow label="Original subtotal">{formatPrice(subtotal + offerDiscount)}</DetailRow>}
+          {offerDiscount > 0 && <DetailRow label="Offer discount">-{formatPrice(offerDiscount)}</DetailRow>}
+          <DetailRow label={offerDiscount > 0 ? 'Payable subtotal' : 'Subtotal'}>{formatPrice(subtotal)}</DetailRow>
           <DetailRow label="Delivery charge">{deliveryCharge ? formatPrice(deliveryCharge) : 'Free'}</DetailRow>
           <div className="adm-detail-row adm-detail-total"><dt>Final total</dt><dd>{formatPrice(order.totalAmount)}</dd></div>
         </dl>
@@ -399,7 +405,7 @@ function OrderListPage({ kind, view }) {
       </>}
     </section>
 
-    {selected && <OrderDetailsModal order={selected} busy={busyId === selected._id} onClose={() => setSelectedId(null)} onStatusChange={updateStatus} />}
+    {selected && <OrderDetailsModal order={selected} busy={busyId === selected._id} onClose={() => setSelectedId(null)} onStatusChange={updateStatus} onQuote={saveQuotation} />}
   </div>
 }
 
@@ -409,10 +415,18 @@ export function AdminOrdersPage() {
 }
 export function AdminPreOrdersPage({ view = 'all' }) { return <OrderListPage kind="preorder" view={view} /> }
 
-function BulkRequestModal({ request, onClose, onStatusChange, busy }) {
+function BulkRequestModal({ request, onClose, onStatusChange, onQuote, busy }) {
   const { can } = useAuth()
-  const [status, setStatus] = useState(request.status)
-  useEffect(() => { setStatus(request.status) }, [request.status])
+  const nextStatuses = BULK_NEXT[request.status] || []
+  const [status, setStatus] = useState(nextStatuses[0] || '')
+  const [message, setMessage] = useState('')
+  const [prices, setPrices] = useState(() => request.products.map((_, index) => request.quotation?.items?.[index]?.unitPrice ?? ''))
+  const [delivery, setDelivery] = useState(request.quotation?.deliveryCharge ?? '')
+  const [validUntil, setValidUntil] = useState(request.quotation?.validUntil ? String(request.quotation.validUntil).slice(0, 10) : '')
+  const [quoteMessage, setQuoteMessage] = useState(request.quotation?.message || '')
+  useEffect(() => { setStatus((BULK_NEXT[request.status] || [])[0] || ''); setMessage('') }, [request.status])
+  const quoteTotal = request.products.reduce((sum, item, index) => sum + (Number(prices[index]) || 0) * item.quantity, 0) + (Number(delivery) || 0)
+  const pricesComplete = prices.every((value) => value !== '' && Number(value) >= 0)
   return <Modal title={`Bulk request ${shortId(request._id)}`} onClose={onClose} wide>
     <section className="adm-detail-section">
       <h3 className="adm-modal-section-title"><ReceiptText size={14} />Request information</h3>
@@ -443,17 +457,40 @@ function BulkRequestModal({ request, onClose, onStatusChange, busy }) {
     <section className="adm-detail-section">
       <h3 className="adm-modal-section-title">Requested products ({request.products.length})</h3>
       <ul className="adm-order-items adm-bulk-items">{request.products.map((item, index) => <li key={`${item.name}-${index}`}><span className="adm-cell-stack"><strong>{item.name}</strong></span><strong>{item.quantity} {item.unit}</strong></li>)}</ul>
-      <p className="adm-muted">Pricing is agreed with the customer during review; the request does not store an amount.</p>
     </section>
+    {request.quotation && <section className="adm-detail-section">
+      <h3 className="adm-modal-section-title"><IndianRupee size={14} />Current quotation</h3>
+      <ul className="adm-order-items adm-bulk-items">{request.quotation.items.map((item, index) => <li key={`${item.name}-${index}`}><span className="adm-cell-stack"><strong>{item.name}</strong><small>{item.quantity} {item.unit} × {formatPrice(item.unitPrice)}</small></span><strong>{formatPrice(item.lineTotal)}</strong></li>)}</ul>
+      <p className="adm-muted">Delivery {formatPrice(request.quotation.deliveryCharge)} · Total <strong>{formatPrice(request.quotation.totalAmount)}</strong>{request.quotation.validUntil ? ` · valid until ${formatDate(request.quotation.validUntil)}` : ''}{request.quotation.quotedByName ? ` · by ${request.quotation.quotedByName}` : ''}</p>
+    </section>}
+    {request.adminResponse?.message && <p className="adm-note"><StickyNote size={15} /><span><strong>Message to customer:</strong> {request.adminResponse.message}</span></p>}
     {request.additionalRequirements && <p className="adm-note"><StickyNote size={15} /><span><strong>Additional requirements:</strong> {request.additionalRequirements}</span></p>}
     <StatusHistory history={request.statusHistory} labelFor={(value) => value} />
 
-    {can('bulk:update') && <section className="adm-detail-section adm-status-editor">
+    {can('bulk:update') && BULK_QUOTABLE.includes(request.status) && <section className="adm-detail-section adm-status-editor">
+      <h3 className="adm-modal-section-title"><IndianRupee size={14} />{request.quotation ? 'Revise quotation' : 'Send quotation'}</h3>
+      {request.products.map((item, index) => <div className="adm-quote-row" key={`${item.name}-${index}`}>
+        <span><strong>{item.name}</strong> <small>{item.quantity} {item.unit}</small></span>
+        <input type="number" min="0" step="0.01" inputMode="decimal" placeholder={`₹ per ${item.unit}`} aria-label={`Price per ${item.unit} for ${item.name}`} value={prices[index]} onChange={(event) => setPrices((current) => current.map((value, position) => position === index ? event.target.value : value))} />
+        <strong>{formatPrice((Number(prices[index]) || 0) * item.quantity)}</strong>
+      </div>)}
+      <div className="adm-quote-grid">
+        <label>Delivery charge (₹)<input type="number" min="0" step="0.01" inputMode="decimal" value={delivery} onChange={(event) => setDelivery(event.target.value)} /></label>
+        <label>Valid until<input type="date" value={validUntil} onChange={(event) => setValidUntil(event.target.value)} /></label>
+      </div>
+      <label className="adm-response-field">Message to customer (optional)<textarea rows="2" maxLength="1000" value={quoteMessage} onChange={(event) => setQuoteMessage(event.target.value)} /></label>
+      <p className="adm-quote-total">Total <strong>{formatPrice(quoteTotal)}</strong></p>
+      <button type="button" className="button button-primary" disabled={busy || !pricesComplete} onClick={() => onQuote(request, { items: prices.map((unitPrice) => ({ unitPrice: Number(unitPrice) })), deliveryCharge: Number(delivery) || 0, validUntil: validUntil || undefined, message: quoteMessage })}>{busy ? 'Saving…' : request.quotation ? 'Update quotation' : 'Send quotation'}</button>
+    </section>}
+
+    {can('bulk:update') && nextStatuses.length > 0 && <section className="adm-detail-section adm-status-editor">
       <h3 className="adm-modal-section-title">Update status</h3>
       <div className="adm-status-row">
-        <label className="sort-select"><select value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Request status">{BULK_STATUSES.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-        <button type="button" className="button button-primary" disabled={busy || status === request.status} onClick={() => onStatusChange(request, status)}>{busy ? 'Saving…' : 'Save status'}</button>
+        <label className="sort-select"><select value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Request status">{nextStatuses.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+        <button type="button" className="button button-primary" disabled={busy || !status || (status === 'Rejected' && !message.trim()) || (status === 'Approved' && !request.quotation)} onClick={() => onStatusChange(request, status, message)}>{busy ? 'Saving…' : 'Save status'}</button>
       </div>
+      <label className="adm-response-field">{status === 'Rejected' ? 'Reason for the customer (required)' : 'Message to customer (optional)'}<textarea rows="2" maxLength="1000" value={message} onChange={(event) => setMessage(event.target.value)} /></label>
+      {status === 'Approved' && !request.quotation && <p className="adm-muted">Send a quotation before approving.</p>}
     </section>}
   </Modal>
 }
@@ -486,12 +523,25 @@ export function AdminBulkOrdersPage({ view = 'all' }) {
   useEffect(() => { load() }, [])
   useEffect(() => { setPage(1) }, [search, status])
 
-  async function updateStatus(request, value) {
+  async function updateStatus(request, value, message = '') {
     setBusyId(request._id)
     try {
-      const { data } = await api.patch(`/admin/bulk-orders/${request._id}/status`, { status: value })
+      const { data } = await api.patch(`/admin/bulk-orders/${request._id}/status`, { status: value, ...(message.trim() ? { message } : {}) })
       setRequests((current) => current.map((item) => item._id === request._id ? { ...item, ...data.request } : item))
       toast(`Bulk request ${shortId(request._id)} marked as ${value.toLowerCase()}.`)
+    } catch (requestError) {
+      toast(getApiError(requestError), 'error')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function saveQuotation(request, payload) {
+    setBusyId(request._id)
+    try {
+      const { data } = await api.put(`/admin/bulk-orders/${request._id}/quotation`, payload)
+      setRequests((current) => current.map((item) => item._id === request._id ? { ...item, ...data.request } : item))
+      toast(`Quotation saved for bulk request ${shortId(request._id)}.`)
     } catch (requestError) {
       toast(getApiError(requestError), 'error')
     } finally {

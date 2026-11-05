@@ -5,6 +5,7 @@ import asyncHandler from '../utils/asyncHandler.js';
 import { DELIVERY_TRANSITIONS, ORDER_TYPE_PERMISSIONS, hasPermission, orderTypeCondition, viewableOrderTypes } from '../config/permissions.js';
 import { dispatchOrderNotification, dispatchStatusNotification } from '../utils/orderNotifications.js';
 import { deliveryFeeFor, loadOrderPricingRules } from '../utils/orderPricing.js';
+import { bestOfferFor, loadPricingContext, round2 } from '../utils/promotionPricing.js';
 import { maskOrder } from '../utils/privacy.js';
 import { buildStatusEntry, statusUpdateWithAudit, withPresentedHistory, withoutStatusHistory } from '../utils/statusAudit.js';
 
@@ -43,12 +44,29 @@ export function createOrder(orderType = 'normal') {
     if (byId.size !== new Set(items.map((item) => String(item.productId))).size) return res.status(400).json({ message: 'One or more products are no longer available.' });
     const orderItems = [];
     let subtotal = 0;
+    // Live promotions are read once, from the database, at the moment the order is placed.
+    const promotions = await loadPricingContext();
     for (const item of items) {
       const product = byId.get(String(item.productId));
       if (orderType === 'preorder' && !product.preOrderAvailable) return res.status(400).json({ message: `${product.name} is not available for pre-order.` });
       if (orderType === 'normal' && item.quantity > product.stock) return res.status(409).json({ message: `Only ${product.stock} ${product.unit} of ${product.name} are available.` });
-      subtotal += product.price * item.quantity;
-      orderItems.push({ product: product.id, name: product.name, image: product.images[0] || '', price: product.price, unit: product.unit, quantity: item.quantity });
+      // `price` on the stored line is the final unit price actually charged; the rest of the pricing is kept
+      // as an immutable snapshot, so later edits to the product or promotion never change this order.
+      const offer = bestOfferFor(product, promotions);
+      const unitPrice = offer ? offer.finalPrice : product.price;
+      const discountPerUnit = offer ? offer.discountPerUnit : 0;
+      subtotal += unitPrice * item.quantity;
+      orderItems.push({
+        product: product.id, name: product.name, image: product.images[0] || '', price: unitPrice, unit: product.unit, quantity: item.quantity,
+        originalPrice: product.price, discountPerUnit, discountTotal: round2(discountPerUnit * item.quantity), lineTotal: round2(unitPrice * item.quantity),
+        ...(offer ? { promotion: { id: offer.promotionId, title: offer.title, section: offer.section } } : {}),
+      });
+    }
+    subtotal = round2(subtotal);
+    // The browser may say what total it showed, only so a changed price (for example an expired promotion)
+    // is reported instead of silently charged. It is never used as a price.
+    if (req.body.expectedSubtotal !== undefined && Math.abs(Number(req.body.expectedSubtotal) - subtotal) > 0.009) {
+      return res.status(409).json({ code: 'PRICE_CHANGED', message: 'Some prices changed since you last viewed your cart. Please review the updated prices and place your order again.', pricing: { subtotal } });
     }
     if (subtotal < rules.minimumOrderValue) return res.status(400).json({ message: `Minimum order value is ₹${rules.minimumOrderValue}. Add more items to continue.` });
     // The server computes this from the current settings and the looked-up product prices alone —

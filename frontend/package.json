@@ -8,7 +8,7 @@
     "build": "vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test": "node --test tests/access-control.test.mjs"
+    "test": "node --test tests/access-control.test.mjs tests/deals.test.mjs"
   },
   "dependencies": {
     "axios": "^1.20.0",

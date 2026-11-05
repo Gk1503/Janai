@@ -45,6 +45,14 @@ const notificationSettingsSchema = new mongoose.Schema({
 	orderCancelled: { type: Boolean, default: false },
 }, { _id: false });
 
+// Customer-facing promotion sections. Both default to false: nothing is shown or discounted until the
+// owner switches a section on, and a settings document that predates this field reads as all-off, so no
+// migration is needed. Turning a section off never touches the promotions themselves (models/Promotion.js).
+const dealSettingsSchema = new mongoose.Schema({
+	bestDealsEnabled: { type: Boolean, default: false },
+	seasonalDealsEnabled: { type: Boolean, default: false },
+}, { _id: false });
+
 // Single canonical business-settings document. Controllers always read/write via Settings.findOne({})
 // (or an upsert against {}), never by a caller-supplied id, so a second document can never be created
 // through normal use. `general`, `orderSettings` and `notifications` are the categories implemented so
@@ -63,6 +71,7 @@ const settingsSchema = new mongoose.Schema({
 	},
 	orderSettings: { type: orderSettingsSchema, default: () => ({}) },
 	notifications: { type: notificationSettingsSchema, default: () => ({}) },
+	deals: { type: dealSettingsSchema, default: () => ({}) },
 	updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
 }, { timestamps: true });
 

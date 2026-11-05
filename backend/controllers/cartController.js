@@ -1,10 +1,26 @@
 import Cart from '../models/Cart.js';
 import Product from '../models/Product.js';
 import asyncHandler from '../utils/asyncHandler.js';
+import { loadPricingContext, priceLines } from '../utils/promotionPricing.js';
+
+// The cart as sent to the browser: each line carries the server-calculated offer and unit price, and the
+// cart carries the original subtotal, discount and payable subtotal. The stored cart holds only product ids
+// and quantities, so an expired promotion simply stops applying the next time the cart is read.
+export async function presentCart(cart) {
+  const plain = typeof cart?.toJSON === 'function' ? cart.toJSON() : cart;
+  const lines = (plain.items || []).filter((item) => item.product && item.product._id);
+  const priced = priceLines(lines.map((item) => ({ product: item.product, quantity: item.quantity })), await loadPricingContext());
+  const byProduct = new Map(priced.items.map((line) => [line.productId, line]));
+  const items = (plain.items || []).map((item) => {
+    const line = item.product && byProduct.get(String(item.product._id));
+    return line ? { ...item, offer: line.offer, unitPrice: line.unitPrice, lineTotal: line.lineTotal } : item;
+  });
+  return { ...plain, items, pricing: { originalSubtotal: priced.originalSubtotal, discountTotal: priced.discountTotal, subtotal: priced.subtotal } };
+}
 
 export const getCart = asyncHandler(async (req, res) => {
   const cart = await Cart.findOne({ user: req.user.id }).populate({ path: 'items.product', select: '-vendors' });
-  res.json({ cart: cart || { user: req.user.id, items: [] } });
+  res.json({ cart: await presentCart(cart || { user: req.user.id, items: [] }) });
 });
 
 export const addToCart = asyncHandler(async (req, res) => {
@@ -20,7 +36,7 @@ export const addToCart = asyncHandler(async (req, res) => {
   else cart.items.push({ product: product.id, quantity });
   await cart.save();
   await cart.populate({ path: 'items.product', select: '-vendors' });
-  res.json({ cart });
+  res.json({ cart: await presentCart(cart) });
 });
 
 export const updateCartItem = asyncHandler(async (req, res) => {
@@ -34,7 +50,7 @@ export const updateCartItem = asyncHandler(async (req, res) => {
   item.quantity = quantity;
   await cart.save();
   await cart.populate({ path: 'items.product', select: '-vendors' });
-  res.json({ cart });
+  res.json({ cart: await presentCart(cart) });
 });
 
 export const removeCartItem = asyncHandler(async (req, res) => {
@@ -44,10 +60,10 @@ export const removeCartItem = asyncHandler(async (req, res) => {
     await cart.save();
     await cart.populate({ path: 'items.product', select: '-vendors' });
   }
-  res.json({ cart: cart || { user: req.user.id, items: [] } });
+  res.json({ cart: await presentCart(cart || { user: req.user.id, items: [] }) });
 });
 
 export const clearCart = asyncHandler(async (req, res) => {
   await Cart.findOneAndUpdate({ user: req.user.id }, { $set: { items: [] } }, { upsert: true, new: true, setDefaultsOnInsert: true });
-  res.json({ message: 'Cart cleared.', cart: { user: req.user.id, items: [] } });
+  res.json({ message: 'Cart cleared.', cart: await presentCart({ user: req.user.id, items: [] }) });
 });
