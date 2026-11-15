@@ -3,6 +3,17 @@
 export const TIME_SLOTS = ['8:00 AM - 10:00 AM', '10:00 AM - 12:00 PM', '12:00 PM - 2:00 PM', '2:00 PM - 4:00 PM', '4:00 PM - 6:00 PM', '6:00 PM - 8:00 PM']
 
 export const digitsOnly = (value, max) => String(value || '').replace(/\D/g, '').slice(0, max)
+// Same keystroke-filtering role as digitsOnly, but keeps at most one decimal point and at most
+// `maxDecimals` digits after it (Phase 6) — used wherever a quantity needs decimal entry instead of
+// whole numbers only. Leading/duplicate decimal points collapse to the first one typed.
+export const decimalDigitsOnly = (value, maxLength = 7, maxDecimals = 3) => {
+  const text = String(value || '').replace(/[^\d.]/g, '')
+  const firstDot = text.indexOf('.')
+  if (firstDot === -1) return text.slice(0, maxLength)
+  const whole = text.slice(0, firstDot)
+  const fraction = text.slice(firstDot + 1).replace(/\./g, '').slice(0, maxDecimals)
+  return `${whole}.${fraction}`.slice(0, maxLength + 1)
+}
 // Strips a pasted +91 / leading 0 so "+91 98765 43210" becomes "9876543210".
 export const mobileDigits = (value) => {
   const digits = String(value || '').replace(/\D/g, '')
@@ -40,10 +51,21 @@ export function validatePincode(value) {
   return ''
 }
 export function validateRequired(value, message) { return String(value || '').trim() ? '' : message }
+// Decimal quantities are accepted (Phase 6), capped at 3 decimal places, above the existing minimum —
+// mirrors backend/utils/quantity.js::validateOrderQuantity exactly, so a value accepted here is never
+// rejected again by the server, and vice versa.
+function countDecimals(value) {
+  const text = String(value)
+  if (/e/i.test(text)) return Infinity
+  const dot = text.indexOf('.')
+  return dot === -1 ? 0 : text.length - dot - 1
+}
 export function validateQuantity(value, { min = 1, max } = {}) {
-  const quantity = Number(value)
   if (value === '' || value === null || value === undefined) return 'Enter a quantity.'
-  if (!Number.isInteger(quantity) || quantity < min) return `Quantity must be a whole number of at least ${min}.`
+  const quantity = Number(value)
+  if (!Number.isFinite(quantity)) return 'Enter a valid quantity.'
+  if (quantity < min) return `Quantity must be at least ${min}.`
+  if (countDecimals(quantity) > 3) return 'Quantity can have at most 3 decimal places.'
   if (max && quantity > max) return `Maximum quantity is ${max}.`
   return ''
 }

@@ -3,6 +3,7 @@ import Product from '../models/Product.js';
 import VendorPriceHistory from '../models/VendorPriceHistory.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import { canViewSupplierCosts, hasPermission } from '../config/permissions.js';
+import { validateOrderQuantity } from '../utils/quantity.js';
 
 // Whitelists and casts incoming vendor rows. A client-sent `_id` is kept only when it's
 // a real ObjectId (i.e. an already-persisted vendor) so Mongoose preserves that vendor's
@@ -32,6 +33,24 @@ function sanitizeVendors(vendors) {
 
 const withSupplierVisibility = (query, user) => (canViewSupplierCosts(user) ? query : query.select('-vendors'));
 
+// Customer-facing MOQ fields (Phase 6) are optional and nullable: an empty string from the form means
+// "unset", never 0 — mirrors the existing lastPurchasePrice normalization already used for vendor rows.
+// Mutates only fields present in `payload`, so a caller that never mentions them (e.g. any other
+// partial-update path) leaves them untouched. Returns an error message, or null if everything is valid.
+const MOQ_FIELDS = ['normalMoq', 'bulkMoq', 'preOrderMoq'];
+const MOQ_FIELD_LABELS = { normalMoq: 'Normal Order MOQ', bulkMoq: 'Bulk Order MOQ', preOrderMoq: 'Pre-order MOQ' };
+function normalizeMoqFields(payload) {
+  for (const field of MOQ_FIELDS) {
+    if (!(field in payload)) continue;
+    const raw = payload[field];
+    if (raw === '' || raw === null || raw === undefined) { payload[field] = null; continue; }
+    const { value, error } = validateOrderQuantity(raw, { min: 0 });
+    if (error) return `${MOQ_FIELD_LABELS[field]}: ${error}`;
+    payload[field] = value;
+  }
+  return null;
+}
+
 export const listProducts = asyncHandler(async (req, res) => {
   const { category, q, sort = 'featured', preOrder, bulk, minPrice, maxPrice, rating } = req.query;
   const filter = {};
@@ -60,6 +79,8 @@ export const getProduct = asyncHandler(async (req, res) => {
 
 export const createProduct = asyncHandler(async (req, res) => {
   const payload = { ...req.body };
+  const moqError = normalizeMoqFields(payload);
+  if (moqError) return res.status(400).json({ message: moqError });
   // A brand-new product has no price history to compare against, so vendors are
   // saved as-is (stripped of any client-sent `_id`, which can't be real yet).
   if (payload.vendors !== undefined) payload.vendors = sanitizeVendors(payload.vendors).map(({ _id, ...rest }) => rest);
@@ -68,16 +89,22 @@ export const createProduct = asyncHandler(async (req, res) => {
 });
 
 export const updateProduct = asyncHandler(async (req, res) => {
-  // Staff holding only inventory:update may change stock and nothing else.
+  // Manual Stock Adjustments (Phase 3): stock is no longer editable through this endpoint for anyone —
+  // it must go through the ledgered adjustment API (stockController.js::adjustStock) so every change is
+  // reasoned, attributed, and permanently recorded. inventory:update alone had no other field it was
+  // ever allowed to touch here, so there is nothing left for it to do on this endpoint.
   if (!hasPermission(req.user, 'products:manage')) {
-    const fields = Object.keys(req.body || {});
-    if (fields.length !== 1 || fields[0] !== 'stock') return res.status(403).json({ message: 'You may only update the stock quantity.' });
-    if (typeof req.body.stock !== 'number' || !Number.isFinite(req.body.stock) || req.body.stock < 0) return res.status(400).json({ message: 'Enter a valid stock quantity.' });
+    return res.status(403).json({ message: 'Use Stock Management to adjust stock.' });
   }
   const existing = await Product.findById(req.params.id);
   if (!existing) return res.status(404).json({ message: 'Product not found.' });
 
   const update = { ...req.body };
+  // Stripped unconditionally, even for products:manage: ProductFormModal's own Stock field still sends
+  // a value as part of a full product edit, but it must never silently change stock outside the ledger.
+  delete update.stock;
+  const moqError = normalizeMoqFields(update);
+  if (moqError) return res.status(400).json({ message: moqError });
   const loggingVendors = update.vendors !== undefined;
   if (loggingVendors) update.vendors = sanitizeVendors(update.vendors);
   const previousPriceByVendorId = new Map(existing.vendors.map((vendor) => [String(vendor._id), Number(vendor.purchasePrice)]));

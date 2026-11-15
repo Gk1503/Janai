@@ -8,8 +8,17 @@ import Settings from '../models/Settings.js';
 import Cart from '../models/Cart.js';
 import Product from '../models/Product.js';
 import Order from '../models/Order.js';
+import StockMovement from '../models/StockMovement.js';
 import settingsRouter from '../routes/settingsRoutes.js';
 import { requireAuth, requireOwner } from '../middleware/auth.js';
+import { transactionHelper } from '../utils/withTransaction.js';
+
+// Phase 5: a normal order's placement now runs inside a real MongoDB transaction, and writes a
+// StockMovement per item. This test file has no real database connection (by design — see every other
+// stub below), so both are replaced with simple pass-throughs; nothing here tests transaction mechanics
+// or ledger content, only order/pricing behaviour, which transactionHelper.run leaves unchanged.
+transactionHelper.run = async (work) => work({ id: 'fake-session' });
+StockMovement.create = async (docs) => docs.map((doc, index) => ({ ...doc, _id: `stub-movement-${index}` }));
 
 describe('normalizeOrderSettings (pure validation)', () => {
   it('fills in the existing hardcoded defaults for a never-configured store', () => {
@@ -229,7 +238,16 @@ function stubCartAndOrder() {
   const originalOrderCreate = Order.create;
   Cart.findOne = async () => null;
   let created = null;
-  Order.create = async (payload) => { created = payload; return { ...payload, _id: 'order1' }; };
+  // Phase 5: a normal order is created via the array form (Order.create([doc], {session})) — the only
+  // shape that actually carries a session in real Mongoose — while a pre-order still uses the original
+  // plain-object form. Both are supported here so existing single-object-form assertions keep working.
+  Order.create = async (payloadOrArray) => {
+    const isArray = Array.isArray(payloadOrArray);
+    const payload = isArray ? payloadOrArray[0] : payloadOrArray;
+    created = payload;
+    const result = { ...payload, _id: 'order1' };
+    return isArray ? [result] : result;
+  };
   return { created: () => created, restore() { Cart.findOne = originalCartFindOne; Order.create = originalOrderCreate; } };
 }
 

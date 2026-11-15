@@ -2,12 +2,20 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import Vendor from '../models/Vendor.js';
 import Product from '../models/Product.js';
+import StockMovement from '../models/StockMovement.js';
 import VendorPurchase from '../models/VendorPurchase.js';
 import VendorPriceHistory from '../models/VendorPriceHistory.js';
 import { getVendorPriceHistory, getVendorProducts, getVendorPurchases } from '../controllers/adminVendorController.js';
 import { createPurchase, receivePurchase } from '../controllers/vendorController.js';
 import vendorRouter from '../routes/vendorRoutes.js';
 import { requireAuth, requireAnyPermission } from '../middleware/auth.js';
+import { transactionHelper } from '../utils/withTransaction.js';
+
+// Phase 5: receiving a purchase (and creating one directly as Received) now runs inside a real MongoDB
+// transaction and writes a StockMovement. This file has no real database connection, so both are
+// replaced with simple pass-throughs — nothing here tests transaction mechanics or ledger content.
+transactionHelper.run = async (work) => work({ id: 'fake-session' });
+StockMovement.create = async (docs) => docs.map((doc, index) => ({ ...doc, _id: `stub-movement-${index}` }));
 
 function run(handler, req) {
   return new Promise((resolve) => {
@@ -308,22 +316,30 @@ describe('receivePurchase (vendorController.js): full-receipt-only regression (S
     const originalFindOneAndUpdate = VendorPurchase.findOneAndUpdate;
     const originalUpdateOne = VendorPurchase.updateOne;
     const originalFindById = VendorPurchase.findById;
-    const originalProductUpdateOne = Product.updateOne;
+    const originalProductFindById = Product.findById;
+    const originalProductFindOneAndUpdate = Product.findOneAndUpdate;
     let capturedReceivedQuantity = null;
     // "before" represents the Ordered document this atomically flips from — 100 kg was ordered.
     VendorPurchase.findOneAndUpdate = async () => ({ _id: 'pu1', product: 'p1', quantity: 100 });
     VendorPurchase.updateOne = async (filter, update) => { capturedReceivedQuantity = update.$set.receivedQuantity; return { acknowledged: true }; };
     VendorPurchase.findById = async (id) => ({ _id: id, status: 'Received', receivedQuantity: capturedReceivedQuantity });
-    Product.updateOne = async () => ({ acknowledged: true });
+    // Phase 5: stock is now added via addVariationStock (Product.findOneAndUpdate, returning the
+    // updated document) rather than the old restoreVariationStock (Product.updateOne) — needed so the
+    // ledger can read the true post-write stock. A product/variation validation read precedes it.
+    Product.findById = async () => ({ _id: 'p1', name: 'Rice', unit: 'kg', stock: 50, minStockThreshold: 0 });
+    Product.findOneAndUpdate = async () => ({ _id: 'p1', stock: 150 });
     try {
-      const result = await run(receivePurchase, { params: { productId: 'p1', vendorId: 'e1', purchaseId: 'pu1' } });
+      // Phase 5: the movement records who received it, so this now needs an authenticated actor — the
+      // original test predates that requirement.
+      const result = await run(receivePurchase, { user: { _id: 'owner1', firstName: 'Janai', lastName: 'Admin' }, params: { productId: 'p1', vendorId: 'e1', purchaseId: 'pu1' } });
       assert.equal(result.status, 200);
       assert.equal(capturedReceivedQuantity, 100, 'receivedQuantity must be set to the full ordered quantity, never a partial amount — there is no partial-receipt workflow');
     } finally {
       VendorPurchase.findOneAndUpdate = originalFindOneAndUpdate;
       VendorPurchase.updateOne = originalUpdateOne;
       VendorPurchase.findById = originalFindById;
-      Product.updateOne = originalProductUpdateOne;
+      Product.findById = originalProductFindById;
+      Product.findOneAndUpdate = originalProductFindOneAndUpdate;
     }
   });
 });
