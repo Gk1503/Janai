@@ -1,10 +1,26 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight, IndianRupee, Image as ImageIcon, Plus, RefreshCw, Save, Star, Store, Trash2, Upload } from 'lucide-react'
+import { ChevronLeft, ChevronRight, IndianRupee, Image as ImageIcon, ListChecks, Plus, RefreshCw, Save, Star, Store, Trash2, Upload } from 'lucide-react'
 import api, { getApiError } from '../services/api'
 import { useToast } from '../context/AppContexts'
 import { Modal } from './UI'
 import { VendorPriceHistoryModal, VendorPurchaseHistoryModal } from './VendorHistoryModals'
 import VendorFormModal from './VendorFormModal'
+import { validateQuantity } from '../utils/validation'
+
+// Ordering Rules (Phase 6) — '' (blank) means unset/null, never 0. Shared by the form's live validation
+// and its submit normalization so both agree exactly on what counts as a valid override.
+const MOQ_FIELDS = [['normalMoq', 'Normal Order MOQ'], ['bulkMoq', 'Bulk Order MOQ Override'], ['preOrderMoq', 'Pre-order MOQ Override']]
+function validateMoqFields(form) {
+  for (const [field, label] of MOQ_FIELDS) {
+    if (form[field] === '') continue
+    const message = validateQuantity(form[field], { min: 0 })
+    if (message) return `${label}: ${message}`
+  }
+  return ''
+}
+function normalizedMoq(value) {
+  return value === '' ? null : Number(value)
+}
 
 const MAX_IMAGES = 8
 
@@ -31,6 +47,11 @@ function toFormState(product) {
     preOrderAvailable: Boolean(product?.preOrderAvailable),
     bulkAvailable: Boolean(product?.bulkAvailable),
     featured: Boolean(product?.featured),
+    // Customer-facing Ordering Rules (Phase 6) — unrelated to any vendor's own moq below. null/absent
+    // becomes '' here (blank field); blank on save means "unset", never 0 — see submit()'s payload.
+    normalMoq: product?.normalMoq ?? '',
+    bulkMoq: product?.bulkMoq ?? '',
+    preOrderMoq: product?.preOrderMoq ?? '',
   }
 }
 
@@ -412,12 +433,17 @@ export default function ProductFormModal({ product, onClose, onSaved }) {
 
   async function submit(event) {
     event.preventDefault()
+    const moqError = validateMoqFields(form)
+    if (moqError) { setError(moqError); return }
     setBusy(true)
     setError('')
     const payload = {
       ...form,
       price: Number(form.price),
       stock: Number(form.stock),
+      normalMoq: normalizedMoq(form.normalMoq),
+      bulkMoq: normalizedMoq(form.bulkMoq),
+      preOrderMoq: normalizedMoq(form.preOrderMoq),
       images: images.map((img) => img.src),
       vendors: vendors
         .filter((vendor) => vendor.name.trim() || Number(vendor.purchasePrice) > 0)
@@ -582,6 +608,28 @@ export default function ProductFormModal({ product, onClose, onSaved }) {
             <strong>Featured</strong>
             <button type="button" role="switch" aria-checked={form.featured} aria-label="Featured" className={`adm-switch${form.featured ? ' is-on' : ''}`} onClick={() => setField('featured', !form.featured)}><span className="adm-switch-thumb" /></button>
           </div>
+        </div>
+      </div>
+
+      <div className="adm-form-section">
+        <div className="adm-form-section-head"><ListChecks size={16} /><h3>Ordering Rules</h3></div>
+        <p className="adm-form-section-description">The minimum quantity a customer must order per order type. This is separate from any vendor's own minimum order quantity in Vendor &amp; Procurement below, which is about what you buy, not what customers can order.</p>
+        <div className="adm-soft-section">
+          <div className="adm-form-grid">
+            <label className="field">
+              <span>Normal Order MOQ</span>
+              <div className="adm-price-suffix"><input type="number" min="0" step="0.001" value={form.normalMoq} onChange={(event) => setField('normalMoq', event.target.value)} placeholder="No minimum" /><small>{form.unit}</small></div>
+            </label>
+            <label className="field">
+              <span>Bulk Order MOQ Override</span>
+              <div className="adm-price-suffix"><input type="number" min="0" step="0.001" value={form.bulkMoq} onChange={(event) => setField('bulkMoq', event.target.value)} placeholder="Uses Normal MOQ" /><small>{form.unit}</small></div>
+            </label>
+            <label className="field">
+              <span>Pre-order MOQ Override</span>
+              <div className="adm-price-suffix"><input type="number" min="0" step="0.001" value={form.preOrderMoq} onChange={(event) => setField('preOrderMoq', event.target.value)} placeholder="Uses Normal MOQ" /><small>{form.unit}</small></div>
+            </label>
+          </div>
+          <p className="adm-form-note">Leave Bulk or Pre-order blank to automatically use the Normal Order MOQ for that order type. Leave a field blank (or set it to 0) for no minimum at all. Changing these values only affects new orders — it never affects orders already placed.</p>
         </div>
       </div>
 

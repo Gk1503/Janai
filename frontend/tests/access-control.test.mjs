@@ -119,8 +119,26 @@ before(async () => {
     filterPurchases: (await server.ssrLoadModule('/src/pages/AdminVendorDetailPage.jsx')).filterPurchases,
     VendorAnalytics: (await server.ssrLoadModule('/src/components/VendorAnalytics.jsx')).default,
     sortVendorRows: (await server.ssrLoadModule('/src/components/VendorAnalytics.jsx')).sortVendorRows,
+    AdminInventoryPage: (await server.ssrLoadModule('/src/pages/AdminInventoryPage.jsx')).default,
+    formatStockByUnit: (await server.ssrLoadModule('/src/pages/AdminInventoryPage.jsx')).formatStockByUnit,
+    describeOrderEvent: (await server.ssrLoadModule('/src/pages/AdminInventoryPage.jsx')).describeOrderEvent,
+    AdminStockPage: (await server.ssrLoadModule('/src/pages/AdminStockPage.jsx')).default,
+    statusPillClass: (await server.ssrLoadModule('/src/pages/AdminStockPage.jsx')).statusPillClass,
+    StockAdjustmentModal: (await server.ssrLoadModule('/src/components/StockAdjustmentModal.jsx')).default,
+    computeNewStock: (await server.ssrLoadModule('/src/components/StockAdjustmentModal.jsx')).computeNewStock,
+    StockUpdateModal: (await server.ssrLoadModule('/src/components/StockUpdateModal.jsx')).default,
+    StockMovementHistory: (await server.ssrLoadModule('/src/components/StockMovementHistory.jsx')).default,
+    movementTypeBadgeClass: (await server.ssrLoadModule('/src/components/StockMovementHistory.jsx')).movementTypeBadgeClass,
+    formatSignedDifference: (await server.ssrLoadModule('/src/components/StockMovementHistory.jsx')).formatSignedDifference,
+    differenceClass: (await server.ssrLoadModule('/src/components/StockMovementHistory.jsx')).differenceClass,
     isInvalidDateRange: (await server.ssrLoadModule('/src/pages/AdminVendorDetailPage.jsx')).isInvalidDateRange,
     VendorPurchaseHistoryModal: (await server.ssrLoadModule('/src/components/VendorHistoryModals.jsx')).VendorPurchaseHistoryModal,
+    QuantitySelector: (await server.ssrLoadModule('/src/components/UI.jsx')).QuantitySelector,
+    validateQuantity: (await server.ssrLoadModule('/src/utils/validation.js')).validateQuantity,
+    decimalDigitsOnly: (await server.ssrLoadModule('/src/utils/validation.js')).decimalDigitsOnly,
+    digitsOnly: (await server.ssrLoadModule('/src/utils/validation.js')).digitsOnly,
+    AdminReportsPage: (await server.ssrLoadModule('/src/pages/AdminReportsPage.jsx')).default,
+    resolveReportRange: (await server.ssrLoadModule('/src/pages/AdminReportsPage.jsx')).resolveReportRange,
   };
 });
 
@@ -3328,5 +3346,714 @@ describe('AdminVendorsPage: Analytics view toggle (Vendor Management Stage 8)', 
     assert.match(html, /Vendors/);
     assert.match(html, /Add Vendor/);
     assert.match(html, /Loading vendors/);
+  });
+});
+
+describe('formatStockByUnit (pure, AdminInventoryPage)', () => {
+  it('joins multiple units with a separator and never sums incompatible units into one number', () => {
+    assert.equal(mods.formatStockByUnit([{ unit: 'kg', quantity: 50 }, { unit: 'L', quantity: 10 }]), '50 kg · 10 L');
+  });
+  it('accepts either a quantity or stock key, since the overview response reuses this shape for both', () => {
+    assert.equal(mods.formatStockByUnit([{ unit: 'kg', stock: 5 }]), '5 kg');
+  });
+  it('renders a dash for empty or missing input, never a misleading zero', () => {
+    assert.equal(mods.formatStockByUnit([]), '—');
+    assert.equal(mods.formatStockByUnit(undefined), '—');
+  });
+});
+
+describe('describeOrderEvent (pure, AdminInventoryPage)', () => {
+  it('labels a normal order deduction, a pre-order deduction, and a bulk request deduction distinctly', () => {
+    assert.equal(mods.describeOrderEvent({ type: 'order', orderType: 'normal', event: 'deducted' }), 'Order stock deducted');
+    assert.equal(mods.describeOrderEvent({ type: 'order', orderType: 'preorder', event: 'deducted' }), 'Pre-order stock deducted');
+    assert.equal(mods.describeOrderEvent({ type: 'bulk_order', event: 'deducted' }), 'Bulk request stock deducted');
+  });
+  it('labels a restoration distinctly from a deduction, and never implies a permanent ledger entry', () => {
+    const label = mods.describeOrderEvent({ type: 'order', orderType: 'normal', event: 'restored' });
+    assert.equal(label, 'Order stock restored (cancelled/rejected)');
+  });
+});
+
+describe('AdminInventoryPage (Inventory Dashboard, Phase 1)', () => {
+  it('renders the loading state on first render, before the overview fetch resolves', () => {
+    const html = render(h(mods.AdminInventoryPage), owner);
+    assert.match(html, /Inventory/);
+    assert.match(html, /Loading inventory overview/);
+  });
+
+  it('fetches from the new /inventory/overview endpoint and nothing else', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminInventoryPage.jsx', import.meta.url), 'utf8');
+    assert.match(source, /api\.get\('\/inventory\/overview'\)/);
+    assert.ok(!/api\.(post|put|patch|delete)\(/.test(source), 'this page only ever reads inventory data — it never writes anything in this phase');
+  });
+
+  it('never renders a disabled or non-functional button/link for adjustments, movement history or alerts, which are not implemented in this phase', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminInventoryPage.jsx', import.meta.url), 'utf8');
+    // Prose explicitly disclosing these are future-phase features is fine (and expected); only an
+    // actual interactive element offering them would be the "non-functional button" this guards against.
+    assert.ok(!/<(button|Link)[^>]*>\s*(Adjust Stock|Movement History|Configure[^<]*Alert)/i.test(source));
+  });
+
+  it('is wired under the existing PRODUCTS sidebar group and shares the Vendors-style permission gate, not a new broader one', async () => {
+    const { readFileSync } = await import('node:fs');
+    const navSource = readFileSync(new URL('../src/components/adminNavigation.js', import.meta.url), 'utf8');
+    assert.match(navSource, /label: 'Inventory', path: '\/admin\/inventory'/);
+    const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
+    assert.match(appSource, /<RequirePermission any=\{\['products:view', 'products:manage', 'inventory:update'\]\} \/>/);
+    assert.match(appSource, /path="admin\/inventory" element=\{<AdminInventoryPage \/>\}/);
+  });
+
+  it('a staff member with none of products:view/products:manage/inventory:update cannot open the Inventory page', async () => {
+    const html = render(h(mods.RequirePermission, { any: ['products:view', 'products:manage', 'inventory:update'] }, h(mods.AdminInventoryPage)), { role: 'staff', isActive: true, permissions: ['delivery:view'] });
+    assert.ok(!/Loading inventory overview/.test(html), 'an unauthorized staff member must never even mount the page');
+  });
+
+  it('shows purchase totals conditionally, matching the backend canViewPurchaseValues flag, never hardcoding visibility', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminInventoryPage.jsx', import.meta.url), 'utf8');
+    assert.match(source, /data\.canViewPurchaseValues/);
+  });
+});
+
+describe('statusPillClass (pure, AdminStockPage)', () => {
+  it('maps healthy to the default green pill, unconfigured to a neutral tone, and everything else to the existing alert tone', () => {
+    assert.equal(mods.statusPillClass('healthy'), 'status-pill');
+    assert.equal(mods.statusPillClass('unconfigured'), 'status-pill is-neutral');
+    assert.equal(mods.statusPillClass('lowStock'), 'status-pill is-muted');
+    assert.equal(mods.statusPillClass('outOfStock'), 'status-pill is-muted');
+  });
+});
+
+describe('AdminStockPage (Stock Management, Phase 2)', () => {
+  it('renders the loading state on first render, before the stock fetch resolves', () => {
+    const html = render(h(mods.AdminStockPage), owner);
+    assert.match(html, /Stock Management/);
+    assert.match(html, /Loading stock/);
+  });
+
+  it('fetches from the new /stock endpoint only, and edits a threshold through the dedicated PATCH endpoint — never through the existing product-update path', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminStockPage.jsx', import.meta.url), 'utf8');
+    assert.match(source, /api\.get\('\/stock', \{ params \}\)/);
+    assert.match(source, /api\.patch\(`\/stock\/\$\{row\.productId\}\/variations\/\$\{row\.variationId\}\/threshold`/);
+    assert.ok(!/api\.(put|patch)\('\/products/.test(source), 'threshold edits must never go through the general product-update endpoint — not even the one Phase 3 moved stock editing off of');
+  });
+
+  it('only shows the threshold edit control to a user who holds products:manage', async () => {
+    const managerHtml = render(h(mods.AdminStockPage), { role: 'staff', isActive: true, permissions: ['products:manage'] });
+    const viewerHtml = render(h(mods.AdminStockPage), { role: 'staff', isActive: true, permissions: ['inventory:update'] });
+    assert.match(managerHtml, /Loading stock/);
+    assert.match(viewerHtml, /Loading stock/);
+    // Both mount (view is allowed for either); the edit affordance itself is checked via source, since
+    // this SSR harness renders before the fetch resolves and no rows exist yet to inspect per-row.
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminStockPage.jsx', import.meta.url), 'utf8');
+    assert.match(source, /canEditThreshold && <button/);
+  });
+
+  it('is wired beside Inventory under the existing PRODUCTS sidebar group, with the same view permission, and PATCH is reserved for products:manage specifically', async () => {
+    const { readFileSync } = await import('node:fs');
+    const navSource = readFileSync(new URL('../src/components/adminNavigation.js', import.meta.url), 'utf8');
+    assert.match(navSource, /label: 'Stock Management', path: '\/admin\/stock'/);
+    const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
+    assert.match(appSource, /path="admin\/stock" element=\{<AdminStockPage \/>\}/);
+    // Same RequirePermission block as Inventory, not a new or broader gate — one route element wraps both.
+    assert.match(appSource, /path="admin\/inventory" element=\{<AdminInventoryPage \/>\} \/>\s*<Route path="admin\/stock" element=\{<AdminStockPage \/>\} \/>/);
+  });
+
+  it('a staff member with none of products:view/products:manage/inventory:update cannot open the Stock Management page', async () => {
+    const html = render(h(mods.RequirePermission, { any: ['products:view', 'products:manage', 'inventory:update'] }, h(mods.AdminStockPage)), { role: 'staff', isActive: true, permissions: ['delivery:view'] });
+    assert.ok(!/Loading stock/.test(html), 'an unauthorized staff member must never even mount the page');
+  });
+
+  it('never renders a bare Add/Remove/Set-stock button that would bypass the adjustment modal\'s confirmation step, and never a movement-history link or alerts action (out of scope for Phase 2 at the time this test was written — Phase 3 later added one unified "Adjust Stock" entry point per row, which opens the confirmation modal rather than mutating stock directly)', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminStockPage.jsx', import.meta.url), 'utf8');
+    assert.ok(!/<(button|Link)[^>]*>\s*(Add Stock|Remove Stock|Set Stock|Movement History|Configure[^<]*Alert)/i.test(source));
+    assert.match(source, /Adjust Stock/, 'Phase 3\'s single, modal-opening entry point must still be present');
+  });
+
+  it('shows the Adjust Stock action only to inventory:update or products:manage, matching backend permissions', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminStockPage.jsx', import.meta.url), 'utf8');
+    assert.match(source, /const canAdjustStock = can\('products:manage'\) \|\| can\('inventory:update'\)/);
+    assert.match(source, /canAdjustStock && <button/);
+  });
+});
+
+describe('computeNewStock (pure, StockAdjustmentModal)', () => {
+  it('computes add/remove/set_exact consistently, and falls back to the current stock for an incomplete input', () => {
+    assert.equal(mods.computeNewStock('add', 10, '4', ''), 14);
+    assert.equal(mods.computeNewStock('remove', 10, '3', ''), 7);
+    assert.equal(mods.computeNewStock('set_exact', 10, '', '0'), 0);
+    assert.equal(mods.computeNewStock('add', 10, '', ''), 10, 'an empty quantity must not produce NaN or a misleading change');
+  });
+});
+
+describe('StockAdjustmentModal (Manual Stock Adjustments, Phase 3)', () => {
+  const row = { productId: 'p1', variationId: 'legacy', productName: 'Tomato', variationLabel: '', stock: 10, unit: 'kg' };
+
+  it('renders the current stock, operation selector and reason presets on first render', () => {
+    const html = render(h(mods.StockAdjustmentModal, { row, onClose: () => {}, onSaved: () => {} }), owner);
+    assert.match(html, /Current stock/);
+    assert.match(html, /Add Stock/);
+    assert.match(html, /Remove Stock/);
+    assert.match(html, /Set Exact/);
+    assert.match(html, /Physical count correction/);
+    assert.match(html, /Loss \/ Theft/);
+  });
+
+  it('submits through the dedicated adjust endpoint with the row\'s product/variation, never a different one', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/components/StockAdjustmentModal.jsx', import.meta.url), 'utf8');
+    assert.match(source, /api\.post\(`\/stock\/\$\{row\.productId\}\/variations\/\$\{row\.variationId\}\/adjust`/);
+    assert.match(source, /expectedPreviousStock = row\.stock/);
+  });
+
+  it('requires an explanation only when Other is the selected reason, and includes it in the submitted body', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/components/StockAdjustmentModal.jsx', import.meta.url), 'utf8');
+    assert.match(source, /reason !== 'Other' \|\| explanation\.trim\(\)/);
+    assert.match(source, /explanation: reason === 'Other' \? explanation\.trim\(\) : undefined/);
+  });
+
+  it('disables the submit button while saving, preventing a duplicate submission', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/components/StockAdjustmentModal.jsx', import.meta.url), 'utf8');
+    assert.match(source, /disabled=\{saving \|\| !quantityValid \|\| !reasonValid\}/);
+    assert.match(source, /if \(saving\) return/);
+  });
+});
+
+describe('StockUpdateModal: migrated to the ledgered adjustment API (Phase 3)', () => {
+  it('submits a legacy product\'s stock change through the new adjust endpoint, never the old product-update path', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/components/StockUpdateModal.jsx', import.meta.url), 'utf8');
+    assert.match(source, /api\.post\(`\/stock\/\$\{product\._id\}\/variations\/legacy\/adjust`/);
+    assert.match(source, /type: 'set_exact'/);
+    assert.match(source, /expectedPreviousStock: product\.stock/);
+    assert.ok(!/api\.put\(`\/products/.test(source), 'must never fall back to the old, unledgered PUT /products/:id stock path');
+  });
+
+  it('requires a reason, with a mandatory explanation when Other is chosen, before submitting', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/components/StockUpdateModal.jsx', import.meta.url), 'utf8');
+    assert.match(source, /if \(!reason\) \{ setError\('Choose a reason\.'\); return \}/);
+    assert.match(source, /if \(reason === 'Other' && !explanation\.trim\(\)\)/);
+  });
+
+  it('redirects to Stock Management instead of editing ambiguously when the product has real variations', () => {
+    const withVariations = { _id: 'p1', name: 'Rice', stock: 0, unit: 'kg', variations: [{ _id: 'v1', label: '1 kg', stock: 5 }] };
+    const html = render(h(mods.StockUpdateModal, { product: withVariations, onClose: () => {}, onSaved: () => {} }), owner);
+    assert.match(html, /use Stock Management/i);
+  });
+
+  it('renders the familiar single-stock-field form for a legacy product, unchanged in shape', () => {
+    const legacy = { _id: 'p1', name: 'Tomato', stock: 10, unit: 'kg', variations: [] };
+    const html = render(h(mods.StockUpdateModal, { product: legacy, onClose: () => {}, onSaved: () => {} }), owner);
+    assert.match(html, /Stock \(kg\)/);
+    assert.match(html, /Currently 10 kg/);
+  });
+});
+
+describe('AdminStockPage: Current Stock / Movement History view switching (Phase 4)', () => {
+  it('defaults to Current Stock, and switching views never removes the other tab\'s own state/markup from the module', async () => {
+    const html = render(h(mods.AdminStockPage), owner);
+    assert.match(html, /Current Stock/);
+    assert.match(html, /Movement History/);
+    assert.match(html, /Loading stock/, 'Current Stock\'s own loading state is shown by default');
+  });
+
+  it('is a view toggle on the existing page, not a new route or sidebar item', async () => {
+    const { readFileSync } = await import('node:fs');
+    const navSource = readFileSync(new URL('../src/components/adminNavigation.js', import.meta.url), 'utf8');
+    assert.ok(!/movement.?history/i.test(navSource), 'no new sidebar item was added for this');
+    const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
+    assert.ok(!/admin\/stock\/(movements|history)/i.test(appSource), 'no new route was added — it is a view toggle on the existing /admin/stock route');
+  });
+
+  it('existing Stock Management functionality (search/category/status filters, threshold edit, adjust stock) is unaffected by the new toggle', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminStockPage.jsx', import.meta.url), 'utf8');
+    assert.match(source, /api\.get\('\/stock', \{ params \}\)/);
+    assert.match(source, /api\.patch\(`\/stock\/\$\{row\.productId\}\/variations\/\$\{row\.variationId\}\/threshold`/);
+    assert.match(source, /StockAdjustmentModal/);
+  });
+});
+
+describe('movementTypeBadgeClass / formatSignedDifference / differenceClass (pure, StockMovementHistory)', () => {
+  it('badges add as positive, remove as negative, and set_exact as neutral', () => {
+    assert.equal(mods.movementTypeBadgeClass('add'), 'status-pill');
+    assert.equal(mods.movementTypeBadgeClass('remove'), 'status-pill is-muted');
+    assert.equal(mods.movementTypeBadgeClass('set_exact'), 'status-pill is-neutral');
+  });
+
+  it('formats a signed difference correctly, including a plain zero, matching the spec\'s own examples', () => {
+    assert.equal(mods.formatSignedDifference(5, 'kg'), '+5 kg');
+    assert.equal(mods.formatSignedDifference(-3, 'kg'), '-3 kg');
+    assert.equal(mods.formatSignedDifference(-4, 'kg'), '-4 kg');
+    assert.equal(mods.formatSignedDifference(0, 'kg'), '0 kg');
+  });
+
+  it('classifies up/down/neutral for styling, matching the sign of the difference', () => {
+    assert.equal(mods.differenceClass(5), 'is-up');
+    assert.equal(mods.differenceClass(-3), 'is-down');
+    assert.equal(mods.differenceClass(0), '');
+  });
+});
+
+describe('StockMovementHistory (Manual Stock Adjustments, Phase 4)', () => {
+  it('renders the loading state, filters and both the table and card layouts on first render', () => {
+    const html = render(h(mods.StockMovementHistory), owner);
+    assert.match(html, /Search by product name/);
+    assert.match(html, /All Types/);
+    assert.match(html, /All staff/);
+    assert.match(html, /Loading movement history/);
+  });
+
+  it('fetches movements, actors and an unfiltered stock snapshot — never a live Product lookup for display', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/components/StockMovementHistory.jsx', import.meta.url), 'utf8');
+    assert.match(source, /api\.get\('\/stock\/movements', \{ params \}\)/);
+    assert.match(source, /api\.get\('\/stock\/movements\/actors'\)/);
+    assert.ok(!/api\.(post|put|patch|delete)\(/.test(source), 'this view only ever reads history — it never writes anything');
+  });
+
+  it('resets to page 1 whenever any filter changes, and Clear Filters resets everything together', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/components/StockMovementHistory.jsx', import.meta.url), 'utf8');
+    assert.match(source, /useEffect\(\(\) => \{ setPage\(1\) \}, \[filters\]\)/);
+    assert.match(source, /function resetFilters\(\) \{\s*setFiltersInput\(blankFilters\)\s*setFilters\(blankFilters\)\s*\}/);
+  });
+
+  it('debounces the product-name search rather than sending a request on every keystroke', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/components/StockMovementHistory.jsx', import.meta.url), 'utf8');
+    assert.match(source, /window\.setTimeout\(\(\) => setFilters/);
+    assert.match(source, /window\.clearTimeout\(searchTimer\.current\)/);
+  });
+
+  it('shows a dedicated empty state distinct for "no history at all" vs "no results for current filters"', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/components/StockMovementHistory.jsx', import.meta.url), 'utf8');
+    assert.match(source, /No stock movements recorded yet/);
+    assert.match(source, /No movements match/);
+  });
+
+  it('shows a retryable inline error rather than an empty table when the request fails', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/components/StockMovementHistory.jsx', import.meta.url), 'utf8');
+    assert.match(source, /inline-error/);
+    assert.match(source, /onClick=\{load\}>Retry</);
+  });
+
+  it('the details modal uses only the already-fetched movement object — no per-row detail request', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/components/StockMovementHistory.jsx', import.meta.url), 'utf8');
+    assert.match(source, /setDetailTarget\(movement\)/);
+    assert.ok(!/\/stock\/movements\/\$\{/.test(source), 'no single-movement detail endpoint is ever called');
+  });
+
+  it('flags a movement\'s product as no longer in the catalog without fetching the current Product to render historical fields', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/components/StockMovementHistory.jsx', import.meta.url), 'utf8');
+    assert.match(source, /No longer in catalog/);
+    assert.match(source, /isKnownProduct/);
+  });
+
+  it('a staff member with none of products:view/products:manage/inventory:update cannot reach this view at all (gated at the page level, same as Current Stock)', async () => {
+    const html = render(h(mods.RequirePermission, { any: ['products:view', 'products:manage', 'inventory:update'] }, h(mods.AdminStockPage)), { role: 'staff', isActive: true, permissions: ['delivery:view'] });
+    assert.ok(!/Loading stock/.test(html) && !/Movement History/.test(html));
+  });
+
+  it('never exposes a supplier cost, purchase rate, or unrelated staff field in the movement data it requests or renders', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/components/StockMovementHistory.jsx', import.meta.url), 'utf8');
+    assert.ok(!/rate|purchasePrice|totalAmount|supplier/i.test(source));
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe('validateQuantity / decimalDigitsOnly (Phase 6, pure)', () => {
+  it('validateQuantity now accepts decimals up to three places, above the existing minimum', () => {
+    assert.equal(mods.validateQuantity(2.125), '');
+    assert.equal(mods.validateQuantity(2), '');
+    assert.ok(mods.validateQuantity(2.1234)); // more than 3 decimals
+    assert.ok(mods.validateQuantity(0)); // below default min 1
+    assert.ok(mods.validateQuantity(-1));
+    assert.ok(mods.validateQuantity('abc'));
+    assert.ok(mods.validateQuantity(''));
+  });
+  it('validateQuantity still enforces an explicit max, unchanged from before', () => {
+    assert.equal(mods.validateQuantity(5, { max: 10 }), '');
+    assert.ok(mods.validateQuantity(11, { max: 10 }));
+  });
+  it('decimalDigitsOnly keeps digits and at most one decimal point with at most 3 digits after it', () => {
+    assert.equal(mods.decimalDigitsOnly('2.5kg'), '2.5');
+    assert.equal(mods.decimalDigitsOnly('2.1234'), '2.123');
+    assert.equal(mods.decimalDigitsOnly('2..5..5'), '2.55');
+    assert.equal(mods.decimalDigitsOnly('abc'), '');
+  });
+  it('digitsOnly (the existing helper, used elsewhere) is completely untouched', () => {
+    assert.equal(mods.digitsOnly('2.5kg', 5), '25');
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe('QuantitySelector: decimal opt-in (Phase 6)', () => {
+  it('every existing caller (no step/allowTyping passed) renders exactly as before — a plain span, whole-number stepper', () => {
+    const html = render(h(mods.QuantitySelector, { value: 3, onChange() {}, max: 10 }));
+    assert.match(html, /<span>3<\/span>/);
+    assert.ok(!html.includes('<input'), 'no typable input unless allowTyping is explicitly passed');
+  });
+
+  it('allowTyping renders a typable decimal input instead of the plain span, without removing the +/- buttons', () => {
+    const html = render(h(mods.QuantitySelector, { value: 2.5, onChange() {}, step: 0.001, allowTyping: true, max: 10 }));
+    assert.match(html, /<input[^>]*type="number"[^>]*value="2\.5"/);
+    assert.match(html, /aria-label="Decrease quantity"/);
+    assert.match(html, /aria-label="Increase quantity"/);
+  });
+
+  it('the step prop is used for both buttons\' increment/decrement, defaulting to 1 when omitted', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/components/UI.jsx', import.meta.url), 'utf8');
+    assert.match(source, /step = 1/);
+    assert.match(source, /onChange\(clamp\(value - step\)\)/);
+    assert.match(source, /onChange\(clamp\(value \+ step\)\)/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe('ProductFormModal: Ordering Rules (Phase 6)', () => {
+  it('renders three blank MOQ fields with correct fallback-hint placeholders for a new product', () => {
+    const html = render(h(mods.ProductFormModal, { product: null, onClose() {}, onSaved() {} }), owner);
+    assert.match(html, /Ordering Rules/);
+    assert.match(html, /Normal Order MOQ/);
+    assert.match(html, /Bulk Order MOQ Override/);
+    assert.match(html, /Pre-order MOQ Override/);
+    assert.match(html, /placeholder="No minimum"/);
+    assert.match(html, /placeholder="Uses Normal MOQ"/g);
+  });
+
+  it('populates all three MOQ fields when editing an existing product, including an explicit 0', () => {
+    const product = { _id: 'p1', name: 'Tomato', category: 'Vegetables', description: 'Fresh', price: 50, unit: 'kg', stock: 10, normalMoq: 5, bulkMoq: 0, preOrderMoq: 2.5, vendors: [] };
+    const html = render(h(mods.ProductFormModal, { product, onClose() {}, onSaved() {} }), owner);
+    assert.match(html, /value="5"/); // normalMoq
+    assert.match(html, /value="0"/); // bulkMoq, explicit 0 — must render as 0, never blank
+    assert.match(html, /value="2\.5"/); // preOrderMoq
+  });
+
+  it('a blank bulk/pre-order override leaves the field blank (never shows 0) when the product has no override configured', async () => {
+    const product = { _id: 'p1', name: 'Tomato', category: 'Vegetables', description: 'Fresh', price: 50, unit: 'kg', stock: 10, normalMoq: 5, bulkMoq: null, preOrderMoq: null, vendors: [] };
+    const html = render(h(mods.ProductFormModal, { product, onClose() {}, onSaved() {} }), owner);
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/components/ProductFormModal.jsx', import.meta.url), 'utf8');
+    assert.match(source, /bulkMoq: product\?\.bulkMoq \?\? ''/);
+    assert.match(source, /preOrderMoq: product\?\.preOrderMoq \?\? ''/);
+  });
+
+  it('submit converts a blank MOQ field to null, never 0, and uses the shared validator for all three', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/components/ProductFormModal.jsx', import.meta.url), 'utf8');
+    assert.match(source, /function normalizedMoq\(value\) \{\s*return value === '' \? null : Number\(value\)/);
+    assert.match(source, /normalMoq: normalizedMoq\(form\.normalMoq\)/);
+    assert.match(source, /bulkMoq: normalizedMoq\(form\.bulkMoq\)/);
+    assert.match(source, /preOrderMoq: normalizedMoq\(form\.preOrderMoq\)/);
+    assert.match(source, /const moqError = validateMoqFields\(form\)/);
+  });
+
+  it('never confuses the new customer-facing MOQ fields with the existing supplier vendor.moq field', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/components/ProductFormModal.jsx', import.meta.url), 'utf8');
+    // The existing per-vendor "Minimum order quantity" field (supplier procurement) is untouched —
+    // still a plain text field bound to vendor.moq, inside Vendor & Procurement, not Ordering Rules.
+    assert.match(source, /<span>Minimum order quantity<\/span><input value=\{vendor\.moq\}/);
+    assert.match(source, /Vendor &amp; Procurement/);
+  });
+
+  it('the new fields are additive to toFormState — every pre-existing field is still present', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/components/ProductFormModal.jsx', import.meta.url), 'utf8');
+    const toFormStateBlock = source.match(/function toFormState\(product\) \{[\s\S]*?\n\}/)[0];
+    for (const field of ['name:', 'category:', 'description:', 'price:', 'unit:', 'stock:', 'preOrderAvailable:', 'bulkAvailable:', 'featured:', 'normalMoq:', 'bulkMoq:', 'preOrderMoq:']) {
+      assert.ok(toFormStateBlock.includes(field), field);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe('resolveReportRange (pure, AdminReportsPage, Phase 7.1)', () => {
+  it('resolves today/yesterday to a single-day range', () => {
+    const today = mods.resolveReportRange('today');
+    assert.equal(today.from, today.to);
+    const yesterday = mods.resolveReportRange('yesterday');
+    assert.equal(yesterday.from, yesterday.to);
+    assert.notEqual(today.from, yesterday.from);
+  });
+
+  it('resolves last7/last30 to a range ending today', () => {
+    const today = mods.resolveReportRange('today').to;
+    assert.equal(mods.resolveReportRange('last7').to, today);
+    assert.equal(mods.resolveReportRange('last30').to, today);
+  });
+
+  it('resolves thisMonth to the 1st of the current month through today', () => {
+    const range = mods.resolveReportRange('thisMonth');
+    assert.match(range.from, /-01$/);
+    assert.equal(range.to, mods.resolveReportRange('today').to);
+  });
+
+  it('custom requires both dates and rejects a reversed range', () => {
+    assert.ok(mods.resolveReportRange('custom', '', '2026-11-12').error);
+    assert.ok(mods.resolveReportRange('custom', '2026-11-12', '').error);
+    assert.ok(mods.resolveReportRange('custom', '2026-11-15', '2026-11-10').error);
+    assert.deepEqual(mods.resolveReportRange('custom', '2026-11-01', '2026-11-12'), { from: '2026-11-01', to: '2026-11-12' });
+  });
+
+  it('accepts a custom range where from equals to', () => {
+    assert.deepEqual(mods.resolveReportRange('custom', '2026-11-12', '2026-11-12'), { from: '2026-11-12', to: '2026-11-12' });
+  });
+});
+
+describe('AdminReportsPage (Phase 7.1)', () => {
+  it('renders the page heading, date controls and loading state on first render', () => {
+    const html = render(h(mods.AdminReportsPage), owner);
+    assert.match(html, /Reports/);
+    assert.match(html, /Loading inventory movement summary/);
+    assert.match(html, /Today/);
+    assert.match(html, /Last 7 days/);
+    assert.match(html, /Last 30 days/);
+    assert.match(html, /This month/);
+    assert.match(html, /Custom range/);
+  });
+
+  it('only shows the custom date inputs when the custom preset is selected (defaults to last30, not custom — Phase 7.3 widened the shared default)', async () => {
+    const html = render(h(mods.AdminReportsPage), owner);
+    assert.ok(!/Custom range start date/.test(html), 'custom inputs must not render for the default preset');
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminReportsPage.jsx', import.meta.url), 'utf8');
+    assert.match(source, /useState\('last30'\)/);
+  });
+
+  it('fetches from the new /stock/reports/summary endpoint only, with from/to as query params', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminReportsPage.jsx', import.meta.url), 'utf8');
+    assert.match(source, /api\.get\('\/stock\/reports\/summary', \{ params: \{ from: range\.from, to: range\.to \} \}\)/);
+  });
+
+  it('reloads the report whenever the date range changes', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminReportsPage.jsx', import.meta.url), 'utf8');
+    // Phase 7.2 added a second fetch (loadStaff) to the same effect, triggered by the same date-range
+    // state — not a separate effect, and not a separate set of date controls.
+    assert.match(source, /useEffect\(\(\) => \{ load\(\); loadStaff\(\) \}, \[preset, customFrom, customTo\]\)/);
+  });
+
+  it('shows separate unit summaries, never a combined total, and never introduces a chart dependency', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminReportsPage.jsx', import.meta.url), 'utf8');
+    assert.match(source, /summary\.byUnit\.map\(\(row\) =>/);
+    assert.match(source, /Quantities of different units are never combined into one total/);
+    assert.ok(!/recharts|chart\.js|d3|victory|nivo/i.test(source), 'no charting library for this checkpoint');
+  });
+
+  it('shows additions and removals broken down by source and by movement type, in a horizontally-safe table', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminReportsPage.jsx', import.meta.url), 'utf8');
+    assert.match(source, /by Source/);
+    assert.match(source, /by Movement Type/);
+    assert.match(source, /admin-table-wrap/);
+  });
+
+  it('shows a dedicated empty state, distinct from loading and error, when there are no movements in range', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminReportsPage.jsx', import.meta.url), 'utf8');
+    assert.match(source, /No stock movements in this range/);
+  });
+
+  it('shows a retryable inline error rather than an empty report when the request fails', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminReportsPage.jsx', import.meta.url), 'utf8');
+    assert.match(source, /inline-error/);
+    assert.match(source, /onClick=\{load\}>Retry</);
+  });
+
+  it('is registered as its own admin route, activating the pre-existing Reports nav entry, not a new navigation item', async () => {
+    const { readFileSync } = await import('node:fs');
+    const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
+    assert.match(appSource, /<Route path="admin\/reports" element=\{<AdminReportsPage \/>\} \/>/);
+    const navSource = readFileSync(new URL('../src/components/adminNavigation.js', import.meta.url), 'utf8');
+    // Exactly one Reports entry — the pre-existing one — never duplicated.
+    assert.equal((navSource.match(/label: 'Reports'/g) || []).length, 1);
+    assert.match(navSource, /label: 'Reports', path: '\/admin\/reports', icon: BarChart3, access: \{ owner: true \}/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe('AdminReportsPage — Staff Adjustment Report (Phase 7.2)', () => {
+  it('renders the staff report as a second section on first render, alongside the movement summary', () => {
+    const html = render(h(mods.AdminReportsPage), owner);
+    assert.match(html, /Loading inventory movement summary/);
+    assert.match(html, /Loading staff adjustment report/);
+  });
+
+  it('fetches from the new /stock/reports/staff endpoint, with the same from/to as the movement summary', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminReportsPage.jsx', import.meta.url), 'utf8');
+    assert.match(source, /api\.get\('\/stock\/reports\/staff', \{ params: \{ from: range\.from, to: range\.to \} \}\)/);
+  });
+
+  it('reloads the staff report whenever the date range changes, using the same preset/custom-date state as the movement summary', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminReportsPage.jsx', import.meta.url), 'utf8');
+    assert.match(source, /useEffect\(\(\) => \{ load\(\); loadStaff\(\) \}, \[preset, customFrom, customTo\]\)/);
+  });
+
+  it('renders one card per actor id, never one per historical name', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminReportsPage.jsx', import.meta.url), 'utf8');
+    assert.match(source, /staffSummary\.staff\.map\(\(entry\) => \{/);
+    assert.match(source, /key=\{entry\.actorId\}/);
+  });
+
+  it('shows the historical name breakdown in a collapsed, expandable area rather than cluttering the row', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminReportsPage.jsx', import.meta.url), 'utf8');
+    assert.match(source, /<details className="adm-staff-namehistory">/);
+    assert.match(source, /entry\.nameHistory\.length > 1 &&/);
+  });
+
+  it('shows separate per-unit summaries for each staff member, never a combined total', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminReportsPage.jsx', import.meta.url), 'utf8');
+    assert.match(source, /entry\.byUnit\.map\(\(row\) =>/);
+  });
+
+  it('shows a reason breakdown by adjustment count only, never the underlying free-text explanation', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminReportsPage.jsx', import.meta.url), 'utf8');
+    assert.match(source, /entry\.byReason\.map\(\(row\) =>/);
+    assert.ok(!/explanation/i.test(source));
+  });
+
+  it('shows the Set Exact count for each staff member', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminReportsPage.jsx', import.meta.url), 'utf8');
+    assert.match(source, /<small>Set Exact<\/small><strong>\{entry\.setExactCount\}<\/strong>/);
+  });
+
+  it('shows a dedicated empty state, distinct from loading and error, when there are no manual adjustments in range', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminReportsPage.jsx', import.meta.url), 'utf8');
+    assert.match(source, /No manual adjustments in this range/);
+  });
+
+  it('shows a retryable inline error rather than an empty report when the staff request fails', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminReportsPage.jsx', import.meta.url), 'utf8');
+    assert.match(source, /staffError/);
+    assert.match(source, /onClick=\{loadStaff\}>Retry</);
+  });
+
+  it('reuses the existing responsive table/card conventions and introduces no chart dependency, no new route, and no new nav entry', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminReportsPage.jsx', import.meta.url), 'utf8');
+    assert.match(source, /adm-report-unit-grid/);
+    assert.match(source, /admin-table-wrap/);
+    assert.ok(!/recharts|chart\.js|d3|victory|nivo/i.test(source), 'no charting library for this checkpoint');
+    const appSource = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
+    assert.equal((appSource.match(/<Route path="admin\/reports"/g) || []).length, 1, 'no second route added for the staff section');
+    const navSource = readFileSync(new URL('../src/components/adminNavigation.js', import.meta.url), 'utf8');
+    assert.equal((navSource.match(/label: 'Reports'/g) || []).length, 1, 'no new nav entry for the staff section');
+  });
+});
+
+// ---------------------------------------------------------------------------
+describe('AdminReportsPage — Product-wise Inventory Report (Phase 7.3)', () => {
+  it('renders the product-wise report as a third section on first render, alongside the other two', () => {
+    const html = render(h(mods.AdminReportsPage), owner);
+    assert.match(html, /Loading inventory movement summary/);
+    assert.match(html, /Loading staff adjustment report/);
+    assert.match(html, /Loading product-wise inventory report/);
+  });
+
+  it('fetches from the new /stock/reports/products endpoint, with the same from/to as the other sections plus pagination', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminReportsPage.jsx', import.meta.url), 'utf8');
+    assert.match(source, /api\.get\('\/stock\/reports\/products', \{ params \}\)/);
+    assert.match(source, /page: productPage, limit: PRODUCT_PAGE_LIMIT/);
+  });
+
+  it('reloads the product-wise report whenever the date range, product filter, variation filter, or page changes', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminReportsPage.jsx', import.meta.url), 'utf8');
+    assert.match(source, /useEffect\(\(\) => \{ loadProducts\(\) \}, \[preset, customFrom, customTo, productFilter, variationFilter, productPage\]\)/);
+    assert.match(source, /useEffect\(\(\) => \{ setProductPage\(1\) \}, \[preset, customFrom, customTo, productFilter, variationFilter\]\)/);
+  });
+
+  it('only sends a variationId filter together with a product filter, and disables the variation input until a product id is entered', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminReportsPage.jsx', import.meta.url), 'utf8');
+    assert.match(source, /if \(productFilter\.trim\(\) && variationFilter\.trim\(\)\) params\.variationId = variationFilter\.trim\(\)/);
+    assert.match(source, /disabled=\{!productFilter\.trim\(\)\}/);
+  });
+
+  it('shows a deleted-product indicator rather than hiding or erroring on a deleted product\'s row', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminReportsPage.jsx', import.meta.url), 'utf8');
+    assert.match(source, /row\.isDeleted && <> <span className="status-pill is-muted">Deleted<\/span><\/>/);
+  });
+
+  it('never claims a verified opening or closing balance — both are always shown as unavailable, with an explanation', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminReportsPage.jsx', import.meta.url), 'utf8');
+    assert.match(source, /adm-balance-unavailable/);
+    assert.match(source, /Unavailable/);
+    assert.match(source, /unit change leaves no ledger trace/);
+    assert.ok(!/row\.opening\.value|row\.closing\.value/.test(source), 'must never render a computed opening/closing value — there isn\'t one');
+  });
+
+  it('keeps incoming/outgoing/net/movements separated by recorded unit, never combined', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminReportsPage.jsx', import.meta.url), 'utf8');
+    assert.match(source, /productSummary\.rows\.map\(\(row\) =>/);
+    assert.match(source, /row\.unit/);
+  });
+
+  it('shows pagination controls driven by the API\'s own page/pages', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminReportsPage.jsx', import.meta.url), 'utf8');
+    assert.match(source, /ProductReportPagination page=\{productSummary\.page\} pages=\{productSummary\.pages\} onChange=\{setProductPage\}/);
+  });
+
+  it('shows a dedicated empty state, distinct from loading and error, when there are no ledger-recorded movements in range', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminReportsPage.jsx', import.meta.url), 'utf8');
+    assert.match(source, /No ledger-recorded movements in this range/);
+  });
+
+  it('shows a retryable inline error rather than an empty report when the product-wise request fails', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminReportsPage.jsx', import.meta.url), 'utf8');
+    assert.match(source, /productError/);
+    assert.match(source, /onClick=\{loadProducts\}>Retry</);
+  });
+
+  it('renders both a desktop table and a mobile card list for this section, toggled by CSS only (same convention as Stock Movement History)', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../src/pages/AdminReportsPage.jsx', import.meta.url), 'utf8');
+    assert.match(source, /admin-table-wrap adm-product-report-table/);
+    assert.match(source, /adm-product-report-cards/);
+    const cssSource = readFileSync(new URL('../src/Janai.css', import.meta.url), 'utf8');
+    assert.match(cssSource, /\.adm-product-report-cards \{ display: none; \}/);
+    assert.ok(!/recharts|chart\.js|d3|victory|nivo/i.test(source), 'no charting library for this checkpoint');
+  });
+
+  it('defaults the shared report date control to last30 while the custom-range escape hatch keeps working', async () => {
+    assert.deepEqual(mods.resolveReportRange('custom', '2026-11-01', '2026-11-12'), { from: '2026-11-01', to: '2026-11-12' });
+    const today = mods.resolveReportRange('today').to;
+    assert.equal(mods.resolveReportRange('last30').to, today);
   });
 });

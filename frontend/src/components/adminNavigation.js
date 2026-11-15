@@ -1,4 +1,4 @@
-import { BarChart3, Bell, Boxes, CalendarDays, CreditCard, LayoutDashboard, Package, Settings, ShieldCheck, ShoppingBag, Tags, Truck, UserRoundCheck, Users, Warehouse } from 'lucide-react'
+import { BarChart3, Bell, Boxes, CalendarDays, ClipboardList, CreditCard, Layers, LayoutDashboard, Package, Settings, ShieldCheck, ShoppingBag, Tags, Truck, UserRoundCheck, Users, Warehouse } from 'lucide-react'
 
 // `access` decides who sees an item: { permission } | { any: [...] } | { owner: true }. Items without it
 // are treated as owner-only. See utils/permissions.js; the backend enforces access regardless.
@@ -22,6 +22,8 @@ export const adminNavigation = [
     label: 'PRODUCTS',
     items: [
       { label: 'Products', path: '/admin/products', icon: Package, access: { any: ['products:view', 'inventory:update'] } },
+      { label: 'Inventory', path: '/admin/inventory', icon: ClipboardList, access: { any: ['products:view', 'products:manage', 'inventory:update'] } },
+      { label: 'Stock Management', path: '/admin/stock', icon: Layers, access: { any: ['products:view', 'products:manage', 'inventory:update'] } },
       { label: 'Categories', path: '/admin/categories', icon: Tags, access: { permission: 'categories:manage' } },
     ],
   },

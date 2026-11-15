@@ -15,6 +15,8 @@ import deliveryRoutes from './routes/deliveryRoutes.js';
 import contactRoutes from './routes/contactRoutes.js';
 import settingsRoutes from './routes/settingsRoutes.js';
 import vendorRoutes from './routes/vendorRoutes.js';
+import inventoryRoutes from './routes/inventoryRoutes.js';
+import stockRoutes from './routes/stockRoutes.js';
 import { ensureDefaultAdmin } from './config/defaultAdmin.js';
 import { assertOwnerNotUsingDefaultPassword, assertSecureConfig } from './config/startupChecks.js';
 import { legacyEmailIndexPresent } from './config/userIndexes.js';
@@ -41,6 +43,8 @@ app.use('/api/delivery', deliveryRoutes);
 app.use('/api/contact', contactRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/vendors', vendorRoutes);
+app.use('/api/inventory', inventoryRoutes);
+app.use('/api/stock', stockRoutes);
 app.use(notFound);
 app.use(errorHandler);
 

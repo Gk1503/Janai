@@ -4,6 +4,9 @@ const vendorPurchaseSchema = new mongoose.Schema({
   product: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true, index: true },
   vendor: { type: mongoose.Schema.Types.ObjectId, required: true, index: true },
   vendorName: { type: String, trim: true, default: '' },
+  // Inventory foundation (Phase 2). Null/absent on every purchase recorded before this field existed —
+  // read as the implicit default variation (utils/productVariations.js), never backfilled.
+  variationId: { type: String, default: null },
   purchaseDate: { type: Date, required: true },
   quantity: { type: Number, min: 0.001, required: true },
   unit: { type: String, required: true, trim: true },
