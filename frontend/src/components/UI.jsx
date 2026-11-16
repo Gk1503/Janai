@@ -65,8 +65,24 @@ export function Modal({ title, onClose, children, wide = false }) {
   </div>
 }
 
-export function QuantitySelector({ value, onChange, min = 1, max = 99, compact = false }) {
-  return <div className={`quantity-selector${compact ? ' is-compact' : ''}`}><button type="button" aria-label="Decrease quantity" disabled={value <= min} onClick={() => onChange(Math.max(min, value - 1))}><Minus size={14} /></button><span>{value}</span><button type="button" aria-label="Increase quantity" disabled={value >= max} onClick={() => onChange(Math.min(max, value + 1))}><Plus size={14} /></button></div>
+// `step` and `allowTyping` are opt-in (Phase 6) — every existing caller that omits them keeps the exact
+// original behaviour (whole-number stepper, +/-1, no typing). Pass allowTyping to let a caller that
+// needs a decimal quantity (e.g. the cart or pre-order basket) type an exact value directly, rather than
+// clicking a fractional step one increment at a time.
+export function QuantitySelector({ value, onChange, min = 1, max = 99, step = 1, allowTyping = false, compact = false }) {
+  const round = (n) => Math.round(n * 1000) / 1000 // avoids binary-floating-point drift across repeated decimal steps
+  const clamp = (n) => Math.min(max, Math.max(min, round(n)))
+  function handleTyped(event) {
+    const next = Number(event.target.value)
+    if (Number.isFinite(next)) onChange(clamp(next))
+  }
+  return <div className={`quantity-selector${compact ? ' is-compact' : ''}`}>
+    <button type="button" aria-label="Decrease quantity" disabled={value <= min} onClick={() => onChange(clamp(value - step))}><Minus size={14} /></button>
+    {allowTyping
+      ? <input type="number" className="quantity-selector-input" inputMode="decimal" value={value} min={min} max={max} step={step} onChange={handleTyped} aria-label="Quantity" />
+      : <span>{value}</span>}
+    <button type="button" aria-label="Increase quantity" disabled={value >= max} onClick={() => onChange(clamp(value + step))}><Plus size={14} /></button>
+  </div>
 }
 
 export function CategoryCard({ title, description, image, to }) {

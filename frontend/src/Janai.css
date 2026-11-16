@@ -156,9 +156,15 @@ h3 { font-size: 16px; }
 .quantity-selector button { display: grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: 7px; background: var(--sage); color: var(--green); }
 .quantity-selector button:disabled { color: #9eaa9f; }
 .quantity-selector > span { min-width: 26px; text-align: center; font-size: 15px; font-weight: 700; }
+/* Phase 6: the typable decimal-entry variant of the same pill — same sizing/weight as the plain
+   span above, just editable. Hides the native number-input spinner so it doesn't fight with the
+   existing +/- buttons either side of it. */
+.quantity-selector-input { width: 48px; min-width: 26px; border: 0; background: transparent; text-align: center; font-size: 15px; font-weight: 700; font-family: inherit; color: inherit; }
+.quantity-selector-input::-webkit-outer-spin-button, .quantity-selector-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.quantity-selector-input[type="number"] { -moz-appearance: textfield; }
 .quantity-selector.is-compact { min-width: 84px; height: 36px; }
 .quantity-selector.is-compact button { width: 27px; height: 27px; }
-.quantity-selector.is-compact > span { font-size: 14px; }
+.quantity-selector.is-compact > span, .quantity-selector.is-compact .quantity-selector-input { font-size: 14px; }
 .add-button { flex: 1; min-height: 36px; padding-inline: 12px; font-size: 14px; }
 
 .feature-banners { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; padding-bottom: 56px; }
@@ -379,6 +385,9 @@ h3 { font-size: 16px; }
 .order-card-foot a { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--light-green); color: var(--green); }
 .status-pill { display: inline-flex; width: max-content; padding: 4px 7px; border-radius: 99px; background: #e8f4e2; color: var(--green); font-size: 8px; font-weight: 800; text-transform: capitalize; }
 .status-pill.is-muted { background: #fdeceb; color: #a23e31; }
+/* Stock Management: "Threshold Not Set" is neither the healthy green nor the alert red/pink above — an
+   unconfigured threshold is unknown, not confirmed one way or the other, so it gets its own neutral tone. */
+.status-pill.is-neutral { background: #eef1ec; color: var(--muted); }
 .status-pending, .status-placed { background: #fff1d4; color: #8d6216; }
 .status-confirmed, .status-reviewing { background: #e8f0fb; color: #375987; }
 .status-preparing { background: #f1eafd; color: #67509a; }
@@ -965,6 +974,10 @@ h3 { font-size: 16px; }
 
 /* Admin: Products page */
 .adm-page-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+/* Same min-width: 0 reasoning as .adm-metric-card below: without it, a long description next to the
+   head's action button can prevent flex-wrap from kicking in soon enough, pushing the button past the
+   visible width instead of wrapping below it. */
+.adm-page-head > div:first-child { min-width: 0; }
 .adm-page-head h1 { margin-top: 6px; font-size: 24px; }
 .adm-page-head p { margin-top: 4px; color: var(--muted); font-size: 13px; }
 
@@ -1204,6 +1217,51 @@ h3 { font-size: 16px; }
 .adm-history-delta.is-down { color: var(--green); }
 .adm-history-item-meta { display: flex; gap: 12px; flex-wrap: wrap; color: var(--muted); font-size: 12px; }
 
+/* Stock Movement History (Phase 4): table on desktop/tablet, cards on mobile. Both are always rendered
+   — visibility toggles purely via this media query, never JS width-detection, so there is no
+   hydration/SSR mismatch risk. */
+.adm-movement-cards { display: none; }
+@media (max-width: 640px) {
+  .adm-movement-table { display: none; }
+  .adm-movement-cards { display: grid; }
+}
+
+/* Manual Stock Adjustments: the Add/Remove/Set Exact operation selector and the previous/new/difference
+   confirmation preview inside StockAdjustmentModal. */
+.adm-stock-adjust-form .adm-adjust-type-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.adm-adjust-preview { display: flex; flex-wrap: wrap; gap: 14px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: #f7faf5; font-size: 13px; }
+.adm-adjust-preview .is-up strong { color: var(--green); }
+.adm-adjust-preview .is-down strong { color: #a23e31; }
+
+/* Stock Management: inline minimum-threshold editor inside a table cell. */
+.adm-stock-page .admin-table .icon-button { width: 26px; height: 26px; margin-left: 4px; color: var(--muted); }
+.adm-stock-threshold-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.adm-stock-threshold-edit input { width: 80px; min-width: 0; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; }
+.adm-stock-threshold-edit .icon-button { width: 30px; height: 30px; border: 1px solid var(--line); }
+.adm-stock-threshold-edit .form-error { flex: 1 1 100%; margin: 0; }
+
+/* Inventory Dashboard: Recently Received Purchases rows. A fixed-column grid (rather than a wrapping
+   flex row) so product, quantity/vendor, amount and date line up consistently from row to row —
+   amount's column is always reserved, even when masked for a viewer without supplier-cost visibility,
+   so the date column never shifts depending on who is viewing. */
+.adm-stock-activity-row { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, .9fr); align-items: center; gap: 10px; font-size: 13px; color: var(--ink); }
+.adm-stock-activity-row strong { font-size: 14px; }
+.adm-stock-activity-row .adm-stock-activity-amount { color: var(--ink); font-weight: 800; text-align: right; }
+.adm-stock-activity-row .adm-stock-activity-date { color: var(--muted); text-align: right; }
+
+/* Stock Attention's empty state sits inside an already-titled dashboard panel, so the shared
+   .empty-state's full-page min-height (220px, meant for an otherwise-blank page) is excessive here —
+   reduced for this page only, without touching the shared class every other page's empty state relies on. */
+.adm-inventory-page .adm-panel .empty-state { min-height: 0; padding: 14px 6px; }
+.adm-inventory-page .adm-panel .empty-icon { width: 38px; height: 38px; margin-bottom: 6px; }
+.adm-inventory-page .adm-panel .empty-state h2 { font-size: 16px; }
+.adm-inventory-page .adm-panel .empty-state p { margin: 4px 0 0; font-size: 13px; }
+
+@media (max-width: 650px) {
+  .adm-stock-activity-row { grid-template-columns: 1fr 1fr; row-gap: 4px; }
+  .adm-stock-activity-row .adm-stock-activity-amount, .adm-stock-activity-row .adm-stock-activity-date { text-align: left; }
+}
+
 @media (max-width: 720px) {
   .adm-form-grid, .adm-pricing-row, .adm-summary-row, .adm-options-grid { grid-template-columns: 1fr; }
   .adm-image-upload { flex-direction: column; align-items: flex-start; }
@@ -1227,7 +1285,10 @@ h3 { font-size: 16px; }
 /* Admin: metric/stat cards (Customers page) */
 .adm-metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 16px; }
 .adm-metric-grid.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 460px; }
-.adm-metric-card { display: grid; gap: 8px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: #fff; box-shadow: var(--shadow); }
+/* min-width: 0 lets a card actually shrink to its grid track instead of forcing the track (and the
+   whole row) wider than the viewport when a label/hint is long — without it, a grid item's default
+   min-width is based on its content, which can silently push the page into horizontal overflow. */
+.adm-metric-card { display: grid; gap: 8px; min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: #fff; box-shadow: var(--shadow); overflow-wrap: break-word; }
 .adm-metric-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; background: var(--light-green); color: var(--green); }
 .adm-metric-card small { color: var(--muted); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
 .adm-metric-card strong { font: 800 26px Manrope, sans-serif; color: var(--ink); }
@@ -1239,6 +1300,56 @@ h3 { font-size: 16px; }
   .adm-metric-grid { grid-template-columns: 1fr; gap: 10px; }
   .adm-metric-card { padding: 14px; }
 }
+
+/* Reports: Inventory Movement Summary (Phase 7.1) — one card per unit, since different units must
+   never be combined into a single figure. min-width: 0 for the same overflow reason as .adm-metric-card
+   above. */
+.adm-report-unit-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-bottom: 12px; }
+.adm-report-unit-card { display: grid; gap: 10px; min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: #fff; box-shadow: var(--shadow); overflow-wrap: break-word; }
+.adm-report-unit-name { font: 800 16px Manrope, sans-serif; color: var(--ink); text-transform: uppercase; letter-spacing: .03em; }
+.adm-report-unit-figures { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.adm-report-unit-figures small { display: block; color: var(--muted); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+.adm-report-unit-figures strong { font: 800 18px Manrope, sans-serif; color: var(--ink); }
+@media (max-width: 480px) {
+  .adm-report-unit-figures { grid-template-columns: 1fr 1fr; gap: 8px; }
+}
+
+/* Reports: Staff Adjustment Report (Phase 7.2) — one card per staff actor (never per historical name);
+   the name-history breakdown lives in a native <details> so it stays collapsed until opened rather than
+   cluttering the card. */
+.adm-staff-card { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: #fff; box-shadow: var(--shadow); margin-bottom: 14px; }
+.adm-staff-card-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.adm-staff-card-name { font: 800 16px Manrope, sans-serif; color: var(--ink); }
+.adm-staff-card-stats { display: flex; flex-wrap: wrap; gap: 16px; }
+.adm-staff-card-stats div { min-width: 90px; }
+.adm-staff-card-stats small { display: block; color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+.adm-staff-card-stats strong { font: 800 16px Manrope, sans-serif; color: var(--ink); }
+.adm-staff-namehistory summary { cursor: pointer; color: var(--green); font-size: 12.5px; font-weight: 700; }
+.adm-staff-namehistory ul { margin: 8px 0 0; padding-left: 18px; font-size: 12.5px; color: var(--ink); }
+.adm-staff-namehistory li { margin-bottom: 2px; }
+@media (max-width: 480px) {
+  .adm-staff-card { padding: 12px; }
+  .adm-staff-card-stats { gap: 10px; }
+  .adm-staff-card-stats div { min-width: 72px; }
+}
+
+/* Reports: Product-wise Inventory Report (Phase 7.3) — table on desktop/tablet, cards on mobile. Both
+   are always rendered; visibility toggles purely via this media query, mirroring the exact convention
+   already established for Stock Movement History (.adm-movement-table/.adm-movement-cards), so there is
+   no hydration/width-detection mismatch risk. Opening/closing are always unavailable in this phase — see
+   .adm-balance-unavailable, never styled to look like a verified figure. */
+.adm-product-report-cards { display: none; }
+@media (max-width: 640px) {
+  .adm-product-report-table { display: none; }
+  .adm-product-report-cards { display: grid; gap: 10px; }
+}
+.adm-product-row-card { display: grid; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: #fff; box-shadow: var(--shadow); }
+.adm-product-row-card-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px; }
+.adm-product-row-card-head strong { font: 800 15px Manrope, sans-serif; color: var(--ink); }
+.adm-product-row-card-figures { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.adm-product-row-card-figures small { display: block; color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+.adm-product-row-card-figures strong { font: 800 15px Manrope, sans-serif; color: var(--ink); }
+.adm-balance-unavailable { color: var(--muted); font-size: 12px; font-style: italic; }
 
 /* Admin: Customer Details — profile + saved addresses */
 .adm-profile-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; }

@@ -3,7 +3,7 @@ import asyncHandler from '../utils/asyncHandler.js';
 import {
   NOTIFICATION_SETTING_KEYS, normalizeAddress, normalizeBusinessName, normalizeNotificationSettings,
   normalizeOperatingHours, normalizeOptionalEmail, normalizeOptionalLogo, normalizeOptionalPhone,
-  normalizeOrderSettings,
+  normalizeOrderSettings, normalizePricingRules,
 } from '../utils/settingsValidation.js';
 
 // Upsert-on-read: the first call ever made creates the single canonical document with schema defaults
@@ -140,4 +140,46 @@ export const updateNotificationSettings = asyncHandler(async (req, res) => {
     { upsert: true, new: true, setDefaultsOnInsert: true, runValidators: true },
   );
   res.json({ settings: presentNotifications(settings), message: 'Settings saved.' });
+});
+
+// Only the fields the frontend needs, never the raw Mongoose document (no internal `_id`/`__v` per rule).
+function presentPricingSettings(doc) {
+  const pricingRules = doc.pricingRules || [];
+  return {
+    pricingRules: pricingRules.map((rule) => ({
+      minPurchasePrice: rule.minPurchasePrice,
+      maxPurchasePrice: rule.maxPurchasePrice ?? null,
+      fixedProfit: rule.fixedProfit,
+      profitPercent: rule.profitPercent,
+    })),
+    updatedAt: doc.updatedAt,
+  };
+}
+
+// Owner-only to READ as well as write — universal pricing rules are internal markup strategy, never
+// shown to staff, customers, or the public storefront (same precedent as /notifications).
+export const getPricingSettings = asyncHandler(async (req, res) => {
+  const settings = await loadSettings();
+  res.json({ settings: presentPricingSettings(settings) });
+});
+
+const PRICING_SETTINGS_ALLOWED_FIELDS = ['pricingRules'];
+
+// Owner-only (enforced by requireOwner on the route). No field outside `pricingRules` is ever read
+// from the body, so the request cannot reach any other settings category. The whole list is replaced
+// wholesale on every save — same as every other category here — and nothing here ever touches a
+// Product document, so existing product prices are never changed by this handler.
+export const updatePricingSettings = asyncHandler(async (req, res) => {
+  const unsupported = Object.keys(req.body || {}).filter((key) => !PRICING_SETTINGS_ALLOWED_FIELDS.includes(key));
+  if (unsupported.length) return res.status(400).json({ message: `Unsupported field${unsupported.length > 1 ? 's' : ''}: ${unsupported.join(', ')}.` });
+
+  const pricingRules = normalizePricingRules(req.body.pricingRules);
+  if (pricingRules.error) return res.status(400).json({ message: pricingRules.error });
+
+  const settings = await Settings.findOneAndUpdate(
+    {},
+    { $set: { pricingRules: pricingRules.value, updatedBy: req.user._id } },
+    { upsert: true, new: true, setDefaultsOnInsert: true, runValidators: true },
+  );
+  res.json({ settings: presentPricingSettings(settings), message: 'Settings saved.' });
 });

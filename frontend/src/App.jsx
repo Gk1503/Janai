@@ -23,6 +23,11 @@ import AdminCategoriesPage from './pages/AdminCategoriesPage'
 import AdminCustomerDetailPage from './pages/AdminCustomerDetailPage'
 import AdminCustomersPage from './pages/AdminCustomersPage'
 import AdminProductsPage from './pages/AdminProductsPage'
+import AdminVendorsPage from './pages/AdminVendorsPage'
+import AdminVendorDetailPage from './pages/AdminVendorDetailPage'
+import AdminInventoryPage from './pages/AdminInventoryPage'
+import AdminStockPage from './pages/AdminStockPage'
+import AdminReportsPage from './pages/AdminReportsPage'
 import { AdminBulkOrdersPage, AdminOrdersPage, AdminPreOrdersPage } from './pages/AdminOrderPages'
 import { AboutPage, AdminLoginPage, ContactPage, ForgotPasswordPage, LoginPage, RegisterPage } from './pages/AccountPages'
 import BulkOrdersPage from './pages/BulkOrdersPage'
@@ -81,6 +86,16 @@ export default function App() {
         <Route element={<RequirePermission any={['products:view', 'inventory:update']} />}>
           <Route path="admin/products" element={<AdminProductsPage />} />
         </Route>
+        <Route element={<RequirePermission any={['products:view', 'products:manage', 'inventory:update']} />}>
+          <Route path="admin/inventory" element={<AdminInventoryPage />} />
+          <Route path="admin/stock" element={<AdminStockPage />} />
+        </Route>
+        {/* Same permission model as the existing per-product vendor data (productController.js's
+            canViewSupplierCosts / productRoutes.js's vendorRead). */}
+        <Route element={<RequirePermission any={['products:manage', 'inventory:update']} />}>
+          <Route path="admin/vendors" element={<AdminVendorsPage />} />
+          <Route path="admin/vendors/:vendorId" element={<AdminVendorDetailPage />} />
+        </Route>
         <Route element={<RequirePermission any={['orders:view']} />}>
           {/* :view is the status tab (pending, processing, ...); the list stays mounted while switching tabs */}
           <Route path="admin/orders/:view?" element={<AdminOrdersPage />} />
@@ -106,6 +121,10 @@ export default function App() {
           <Route path="admin/settings" element={<AdminSettingsPage />} />
           <Route path="admin/reports" element={<AdminReportsPage />} />
           <Route path="admin/deals" element={<AdminDealsPage />} />
+          {/* Phase 7.1: activates the pre-existing BUSINESS > Reports nav entry (adminNavigation.js),
+              which previously had no route and fell through to the admin/* AdminComingSoon placeholder
+              below. Same access as that nav entry already declared (owner-only) — unchanged. */}
+          <Route path="admin/reports" element={<AdminReportsPage />} />
         </Route>
         <Route element={<RequirePermission any={['delivery:view']} />}>
           <Route path="admin/delivery" element={<AdminDeliveryManagementPage />} />

@@ -1,10 +1,11 @@
 import { useRef, useState } from 'react'
-import { Bell, CreditCard, ShieldCheck, Store, Truck } from 'lucide-react'
+import { Bell, CreditCard, IndianRupee, ShieldCheck, Store, Truck } from 'lucide-react'
 import { EmptyState } from '../components/UI'
 import GeneralSettingsForm from '../components/GeneralSettingsForm'
 import OrderDeliverySettingsForm from '../components/OrderDeliverySettingsForm'
 import NotificationSettingsForm from '../components/NotificationSettingsForm'
 import ChangePasswordForm from '../components/ChangePasswordForm'
+import UniversalPricingSettingsForm from '../components/UniversalPricingSettingsForm'
 import SettingsNavGuardDialog from '../components/SettingsNavGuardDialog'
 import { decideCategorySwitch } from '../utils/settingsNavGuard'
 
@@ -22,6 +23,7 @@ const CATEGORIES = [
   { key: 'payments', label: 'Payments', icon: CreditCard, description: 'Accepted payment methods and related configuration.' },
   { key: 'notifications', label: 'Notifications', icon: Bell, description: 'Alerts and messages sent to staff and customers.', hasForm: true },
   { key: 'security-system', label: 'Security & System', icon: ShieldCheck, description: 'Account security, sessions and system-level configuration.', hasForm: true },
+  { key: 'pricing', label: 'Pricing', icon: IndianRupee, description: 'Universal pricing rules that suggest a selling price from a product\'s purchase price.', hasForm: true },
 ]
 
 export default function AdminSettingsPage() {
@@ -90,7 +92,8 @@ export default function AdminSettingsPage() {
       <p className="adm-muted">Updates the password for the account you are signed in as. You stay signed in on this device.</p>
       <ChangePasswordForm formGuardRef={formGuardRef} />
     </div>
-  } else {
+  } else if (active.key === 'pricing') content = <UniversalPricingSettingsForm formGuardRef={formGuardRef} />
+  else {
     // Placeholder only — no persistence exists yet for this category, so no inputs, toggles or save
     // actions are shown here. Nothing to register: active.hasForm is falsy for this category, so
     // requestSwitch above never reads whatever the ref still holds from a previously active form.

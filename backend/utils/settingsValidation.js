@@ -114,3 +114,87 @@ export function normalizeOrderSettings(input) {
   if (minimumOrderValue.error) return { error: minimumOrderValue.error };
   return { value: { deliveryEnabled, deliveryFee: deliveryFee.value, freeDeliveryThreshold: freeDeliveryThreshold.value, minimumOrderValue: minimumOrderValue.value } };
 }
+
+// Universal Pricing: owner-configured markup rules, matched against a product's purchase price.
+// Boundary convention: minPurchasePrice is inclusive, maxPurchasePrice is exclusive; a rule with no
+// maxPurchasePrice is the open-ended final range — so [0,100), [100,500), [500,∞) are adjacent, not
+// overlapping. This module only validates/normalises the rule list: it never reads or writes a Product
+// document, and existing product prices are never touched here.
+function normalizeRequiredAmount(input, label) {
+  if (input === undefined || input === null || input === '') return { error: `Enter a ${label}.` };
+  if (typeof input !== 'number' && typeof input !== 'string') return { error: `Enter a valid ${label}.` };
+  const num = Number(input);
+  if (!Number.isFinite(num) || num < 0) return { error: `${label} must be 0 or more.` };
+  if (num > MAX_AMOUNT) return { error: `${label} is too large.` };
+  return { value: Math.round(num * 100) / 100 };
+}
+
+function normalizeOptionalNonNegative(input, label) {
+  if (input === undefined || input === null || input === '') return { value: 0 };
+  return normalizeRequiredAmount(input, label);
+}
+
+function normalizePricingRule(input, index) {
+  const ordinal = `rule ${index + 1}`;
+  if (!isPlainObject(input)) return { error: `Pricing ${ordinal} is invalid.` };
+
+  const min = normalizeRequiredAmount(input.minPurchasePrice, `minimum purchase price for ${ordinal}`);
+  if (min.error) return { error: min.error };
+
+  // Missing/empty maxPurchasePrice means open-ended (null) — this is a valid shape, not an error.
+  const maxProvided = !(input.maxPurchasePrice === undefined || input.maxPurchasePrice === null || input.maxPurchasePrice === '');
+  let max = null;
+  if (maxProvided) {
+    const maxResult = normalizeRequiredAmount(input.maxPurchasePrice, `maximum purchase price for ${ordinal}`);
+    if (maxResult.error) return { error: maxResult.error };
+    max = maxResult.value;
+    if (max <= min.value) return { error: `${capitalize(ordinal)}: the maximum purchase price must be greater than the minimum.` };
+  }
+
+  const fixedProfit = normalizeOptionalNonNegative(input.fixedProfit, `fixed profit for ${ordinal}`);
+  if (fixedProfit.error) return { error: fixedProfit.error };
+  const profitPercent = normalizeOptionalNonNegative(input.profitPercent, `profit percentage for ${ordinal}`);
+  if (profitPercent.error) return { error: profitPercent.error };
+  if (fixedProfit.value === 0 && profitPercent.value === 0) {
+    return { error: `${capitalize(ordinal)} needs a fixed profit, a profit percentage, or both — both cannot be zero.` };
+  }
+
+  return { value: { minPurchasePrice: min.value, maxPurchasePrice: max, fixedProfit: fixedProfit.value, profitPercent: profitPercent.value } };
+}
+
+const capitalize = (text) => text.charAt(0).toUpperCase() + text.slice(1);
+
+// Missing entirely normalises to an empty rule list (no universal pricing configured) — the same
+// permissive-on-omission convention as every other category here. Anything present but the wrong shape
+// is rejected outright.
+export function normalizePricingRules(input) {
+  if (input === undefined || input === null) return { value: [] };
+  if (!Array.isArray(input)) return { error: 'Pricing rules must be a list of rules.' };
+
+  const normalized = [];
+  for (let index = 0; index < input.length; index += 1) {
+    const result = normalizePricingRule(input[index], index);
+    if (result.error) return { error: result.error };
+    normalized.push(result.value);
+  }
+
+  if (normalized.filter((rule) => rule.maxPurchasePrice === null).length > 1) {
+    return { error: 'Only one pricing rule may be open-ended (no maximum).' };
+  }
+
+  // Sorted for overlap/position checks (and for storage) so submission order never matters — a rule
+  // list is a set of ranges, not a sequence.
+  const sorted = [...normalized].sort((a, b) => a.minPurchasePrice - b.minPurchasePrice);
+  for (let index = 0; index < sorted.length - 1; index += 1) {
+    const current = sorted[index];
+    const next = sorted[index + 1];
+    // Only the last range (by minPurchasePrice) may be open-ended; reaching one here as `current`
+    // means some other rule starts above it, which is invalid regardless of overlap.
+    if (current.maxPurchasePrice === null) return { error: 'The open-ended pricing rule must be the final range — no rule may start above it.' };
+    if (current.maxPurchasePrice > next.minPurchasePrice) {
+      return { error: `Pricing rules overlap: ₹${current.minPurchasePrice}–₹${current.maxPurchasePrice} overlaps the range starting at ₹${next.minPurchasePrice}.` };
+    }
+  }
+
+  return { value: sorted };
+}

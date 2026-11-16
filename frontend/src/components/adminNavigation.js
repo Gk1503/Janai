@@ -1,4 +1,5 @@
 import { BadgePercent, BarChart3, Bell, Boxes, CalendarDays, CreditCard, LayoutDashboard, Package, Settings, ShieldCheck, ShoppingBag, Tags, Truck, UserRoundCheck, Users } from 'lucide-react'
+import { BarChart3, Bell, Boxes, CalendarDays, ClipboardList, CreditCard, Layers, LayoutDashboard, Package, Settings, ShieldCheck, ShoppingBag, Tags, Truck, UserRoundCheck, Users, Warehouse } from 'lucide-react'
 
 // `access` decides who sees an item: { permission } | { any: [...] } | { owner: true }. Items without it
 // are treated as owner-only. See utils/permissions.js; the backend enforces access regardless.
@@ -22,6 +23,8 @@ export const adminNavigation = [
     label: 'PRODUCTS',
     items: [
       { label: 'Products', path: '/admin/products', icon: Package, access: { any: ['products:view', 'inventory:update'] } },
+      { label: 'Inventory', path: '/admin/inventory', icon: ClipboardList, access: { any: ['products:view', 'products:manage', 'inventory:update'] } },
+      { label: 'Stock Management', path: '/admin/stock', icon: Layers, access: { any: ['products:view', 'products:manage', 'inventory:update'] } },
       { label: 'Categories', path: '/admin/categories', icon: Tags, access: { permission: 'categories:manage' } },
       { label: 'Deals Management', path: '/admin/deals', icon: BadgePercent, access: { owner: true } },
     ],
@@ -46,6 +49,9 @@ export const adminNavigation = [
     items: [
       { label: 'Reports', path: '/admin/reports', icon: BarChart3, access: { owner: true } },
       { label: 'Staff & Access', path: '/admin/staff', icon: ShieldCheck, access: { owner: true } },
+      // Same access as the existing per-product vendor data (productController.js's
+      // canViewSupplierCosts / vendorRead) — owner implicitly included via the `any` check.
+      { label: 'Vendors', path: '/admin/vendors', icon: Warehouse, access: { any: ['products:manage', 'inventory:update'] } },
       { label: 'Settings', path: '/admin/settings', icon: Settings, access: { owner: true } },
     ],
   },

@@ -53,13 +53,17 @@ function emptyPurchaseForm(defaultUnit) {
   return { purchaseDate: new Date().toISOString().slice(0, 10), quantity: '', unit: defaultUnit || 'kg', rate: '', invoiceNumber: '', notes: '', status: 'Ordered' }
 }
 
-export function VendorPurchaseHistoryModal({ productId, vendorId, vendorName, unit, onClose }) {
+// `autoOpenForm` (Stage 6: Record Purchase from the Vendor Detail Page) starts the form expanded
+// instead of behind the "Record Purchase" text-link — purely a different initial value for the same
+// `showForm` state. Every existing caller (ProductFormModal.jsx) omits it, so it defaults to false and
+// behaves exactly as before.
+export function VendorPurchaseHistoryModal({ productId, vendorId, vendorName, unit, autoOpenForm = false, onClose }) {
   const toast = useToast()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [purchases, setPurchases] = useState([])
   const [summary, setSummary] = useState([])
-  const [showForm, setShowForm] = useState(false)
+  const [showForm, setShowForm] = useState(autoOpenForm)
   const [form, setForm] = useState(() => emptyPurchaseForm(unit))
   const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -140,6 +144,7 @@ export function VendorPurchaseHistoryModal({ productId, vendorId, vendorName, un
             <label className="field"><span>Quantity</span><input required type="number" min="0.01" step="0.01" value={form.quantity} onChange={(event) => setField('quantity', event.target.value)} /></label>
             <label className="field"><span>Unit</span><select value={form.unit} onChange={(event) => setField('unit', event.target.value)}>{PURCHASE_UNIT_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
             <label className="field"><span>Rate per unit (₹)</span><input required type="number" min="0" step="0.01" value={form.rate} onChange={(event) => setField('rate', event.target.value)} /></label>
+            <div className="field"><span>Total amount</span><div className="adm-final-price-box"><span>Quantity × Rate</span><strong>{formatPrice((Number(form.quantity) || 0) * (Number(form.rate) || 0))}</strong></div></div>
             <label className="field"><span>Invoice / reference #</span><input value={form.invoiceNumber} onChange={(event) => setField('invoiceNumber', event.target.value)} placeholder="Optional" /></label>
             <label className="field field-wide"><span>Notes</span><textarea rows="2" value={form.notes} onChange={(event) => setField('notes', event.target.value)} placeholder="Optional" /></label>
           </div>

@@ -8,11 +8,20 @@ import { updateOrderStatus } from '../controllers/orderController.js';
 import BulkOrder from '../models/BulkOrder.js';
 import Order from '../models/Order.js';
 import Product from '../models/Product.js';
+import StockMovement from '../models/StockMovement.js';
 import adminRouter from '../routes/adminRoutes.js';
 import bulkRouter from '../routes/bulkOrderRoutes.js';
 import {
   buildStatusEntry, presentStatusHistory, statusUpdateWithAudit, withPresentedHistory, withoutStatusHistory,
 } from '../utils/statusAudit.js';
+import { transactionHelper } from '../utils/withTransaction.js';
+
+// Phase 5: order cancellation restoration (and bulk approval/rejection, elsewhere) now run inside a real
+// MongoDB transaction and write a StockMovement per item. This file has no real database connection, so
+// both are replaced with simple pass-throughs — nothing here tests transaction mechanics or ledger
+// content, only the pre-existing status/permission/restoration behaviour.
+transactionHelper.run = async (work) => work({ id: 'fake-session' });
+StockMovement.create = async (docs) => docs.map((doc, index) => ({ ...doc, _id: `stub-movement-${index}` }));
 
 const owner = { _id: 'u1', firstName: 'Janai', lastName: 'Admin', adminId: 'admin', role: 'admin' };
 const staff = { _id: 'u2', firstName: 'Sam', lastName: 'Staff', adminId: 'sam', role: 'staff' };
@@ -77,7 +86,10 @@ describe('schema protection', () => {
     assert.ok(!read('../utils/statusAudit.js').includes('baseUrl'));
     assert.ok(!read('../controllers/bulkOrderController.js').includes('baseUrl'));
     const orders = read('../controllers/orderController.js');
-    assert.equal(orders.split('\n').filter((line) => line.includes('+statusHistory')).length, 2); // listAdminOrders, updateOrderStatus
+    // Phase 5 added a third call site: confirmPreOrderTransactionally's own status-transition write
+    // (inside its transaction) needed the same '+statusHistory' selection as the generic branch in
+    // updateOrderStatus, alongside the pre-existing listAdminOrders one.
+    assert.equal(orders.split('\n').filter((line) => line.includes('+statusHistory')).length, 3); // listAdminOrders, confirmPreOrderTransactionally, updateOrderStatus
     assert.match(orders, /cancelPreOrder[\s\S]*withoutStatusHistory\(cancelled\)/);
   });
 });
@@ -175,52 +187,77 @@ describe('customer-facing vs admin bulk handlers', () => {
 
 describe('stock restoration on cancellation', () => {
   const items = [{ product: 'p1', name: 'Tomato', quantity: 2 }, { product: 'p2', name: 'Onion', quantity: 3 }];
-  const originals = { findById: Order.findById, findOneAndUpdate: Order.findOneAndUpdate, updateOne: Product.updateOne };
+  const originals = { findById: Order.findById, findOneAndUpdate: Order.findOneAndUpdate, productFindOneAndUpdate: Product.findOneAndUpdate };
   afterEach(() => {
     Order.findById = originals.findById;
     Order.findOneAndUpdate = originals.findOneAndUpdate;
-    Product.updateOne = originals.updateOne;
+    Product.findOneAndUpdate = originals.productFindOneAndUpdate;
   });
 
-  function arrange(updateOne) {
-    const current = { id: 'o1', orderStatus: 'placed', orderType: 'normal' };
+  // Phase 5: restoration now runs addVariationStock (Product.findOneAndUpdate, returning the updated
+  // document or null) rather than the old restoreVariationStock (Product.updateOne, returning a write
+  // result) — needed so the ledger can read the true post-write stock value. The claim
+  // (stockDeductedAt/stockRestoredAt on the order) is unchanged, and still guards exactly-once
+  // restoration; it is now the FIRST write inside one all-or-nothing transaction with every item's
+  // restoration and its StockMovement, rather than a separate step before an unguarded Promise.allSettled
+  // loop — see restoreOrderStockTransactionally in orderController.js.
+  function arrange(findOneAndUpdate, { stockDeductedAt = new Date() } = {}) {
+    const current = { id: 'o1', orderStatus: 'placed', orderType: 'normal', stockDeductedAt, stockRestoredAt: null };
     const cancelled = { ...current, orderStatus: 'cancelled', items, statusHistory: [], toObject() { return { ...this }; } };
     Order.findById = () => Promise.resolve(current);
-    Order.findOneAndUpdate = () => ({ select: () => Promise.resolve(cancelled) });
+    Order.findOneAndUpdate = (filter, update) => {
+      if ('stockRestoredAt' in filter) {
+        if (current.stockDeductedAt === null || current.stockRestoredAt !== null) return Promise.resolve(null);
+        current.stockRestoredAt = update.$set.stockRestoredAt;
+        return Promise.resolve(cancelled);
+      }
+      return { select: () => Promise.resolve(cancelled) };
+    };
     const restored = [];
-    Product.updateOne = (filter, update) => updateOne(filter, update, restored);
+    Product.findOneAndUpdate = (filter, update) => findOneAndUpdate(filter, update, restored);
     return restored;
   }
   const cancelAsOwner = () => run(updateOrderStatus, ownerUser, { orderStatus: 'cancelled' });
 
   it('restores every reserved line exactly once and succeeds', async () => {
-    const restored = arrange(async (filter, update, list) => { list.push([filter._id, update.$inc.stock]); return { matchedCount: 1 }; });
+    const restored = arrange(async (filter, update, list) => { list.push([filter._id, update.$inc.stock]); return { _id: filter._id, stock: 999 }; });
     const result = await cancelAsOwner();
     assert.equal(result.status, 200);
     assert.deepEqual(restored, [['p1', 2], ['p2', 3]]);
   });
 
-  it('reports failure explicitly, not plain success, when a restoration write fails', async () => {
-    arrange(async (filter) => { if (filter._id === 'p2') throw new Error('write failed'); return { matchedCount: 1 }; });
+  // Phase 5: restoration is now all-or-nothing (one transaction covering every item) rather than a
+  // per-item Promise.allSettled list — a single failing item aborts the whole attempt, so the response
+  // no longer names which specific items succeeded or failed. The cancellation itself still persists
+  // independently (restoreOrderStockTransactionally never touches the already-committed status write).
+  it('reports failure explicitly, not plain success, when a restoration write fails partway through', async () => {
+    arrange(async (filter) => { if (filter._id === 'p2') throw new Error('write failed'); return { _id: filter._id, stock: 999 }; });
     const result = await cancelAsOwner();
     assert.equal(result.status, 500);
     assert.equal(result.body.code, 'STOCK_RESTORE_FAILED');
-    assert.match(result.body.message, /Onion/);
-    assert.ok(!/Tomato/.test(result.body.message));
     assert.equal(result.body.order.orderStatus, 'cancelled'); // the cancellation itself persisted
   });
 
-  it('treats a product that no longer exists as not restored', async () => {
-    arrange(async (filter) => ({ matchedCount: filter._id === 'p1' ? 0 : 1 }));
+  it('treats a product that no longer exists (findOneAndUpdate matches nothing) as a failed restoration', async () => {
+    arrange(async (filter) => (filter._id === 'p1' ? null : { _id: filter._id, stock: 999 }));
     const result = await cancelAsOwner();
     assert.equal(result.status, 500);
-    assert.match(result.body.message, /Tomato/);
+    assert.equal(result.body.code, 'STOCK_RESTORE_FAILED');
+    assert.equal(result.body.order.orderStatus, 'cancelled');
   });
 
-  it('does not touch stock for non-cancel transitions or pre-orders', async () => {
-    const restored = arrange(async (filter, update, list) => { list.push(filter._id); return { matchedCount: 1 }; });
-    Order.findById = () => Promise.resolve({ id: 'o1', orderStatus: 'placed', orderType: 'preorder' });
-    Order.findOneAndUpdate = () => ({ select: () => Promise.resolve({ id: 'o1', orderStatus: 'cancelled', orderType: 'preorder', items, toObject() { return { ...this }; } }) });
+  it('does not touch stock for non-cancel transitions or pre-orders that never actually deducted', async () => {
+    // A pre-order cancelled straight from 'placed' never reached confirmation, so it never deducted
+    // stock (Phase 2: pre-orders only deduct at confirm) — stockDeductedAt stays null, and restoration
+    // must find nothing to claim.
+    const restored = arrange(async (filter, update, list) => { list.push(filter._id); return { _id: filter._id, stock: 999 }; }, { stockDeductedAt: null });
+    const current = { id: 'o1', orderStatus: 'placed', orderType: 'preorder', stockDeductedAt: null, stockRestoredAt: null };
+    const cancelled = { ...current, orderStatus: 'cancelled', items, toObject() { return { ...this }; } };
+    Order.findById = () => Promise.resolve(current);
+    Order.findOneAndUpdate = (filter, update) => {
+      if ('stockRestoredAt' in filter) return Promise.resolve(current.stockDeductedAt === null ? null : cancelled);
+      return { select: () => Promise.resolve(cancelled) };
+    };
     const owner = { ...ownerUser, permissions: [] };
     const result = await run(updateOrderStatus, owner, { orderStatus: 'cancelled' });
     assert.equal(result.status, 200);

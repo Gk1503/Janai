@@ -16,6 +16,11 @@ const itemSchema = new mongoose.Schema({
 	discountTotal: { type: Number, min: 0 },
 	lineTotal: { type: Number, min: 0 },
 	promotion: { type: new mongoose.Schema({ id: { type: mongoose.Schema.Types.ObjectId }, title: { type: String }, section: { type: String } }, { _id: false }), default: undefined },
+	// Inventory foundation (Phase 2). Null/absent on every order placed before this field existed, and
+	// on any new order against a product with no real variations — both read as the implicit default
+	// variation (utils/productVariations.js), never migrated or backfilled.
+	variationId: { type: String, default: null },
+	variationLabel: { type: String, default: '' },
 }, { _id: false });
 
 const addressSchema = new mongoose.Schema({
@@ -45,6 +50,13 @@ const orderSchema = new mongoose.Schema({
 	// setting it never changes the status, and it is never set automatically by a status change either.
 	assignedDeliveryStaff: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
 	assignedAt: { type: Date, default: null },
+	// Inventory foundation (Phase 2). Exactly-once guards for stock deduction/restoration — set atomically
+	// as a claim BEFORE the actual stock mutation is attempted, so a duplicate/concurrent status-update
+	// request can never deduct or restore twice. Null on every order that hasn't reached that point yet
+	// (including every order placed before this field existed, for restoration purposes — see
+	// orderController.js).
+	stockDeductedAt: { type: Date, default: null },
+	stockRestoredAt: { type: Date, default: null },
 	// Append-only audit trail of status changes; excluded from queries unless explicitly selected.
 	statusHistory: statusHistoryField,
 }, { timestamps: true });
