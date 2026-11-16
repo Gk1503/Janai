@@ -1,3 +1,4 @@
+import { BadgePercent, BarChart3, Bell, Boxes, CalendarDays, CreditCard, LayoutDashboard, Package, Settings, ShieldCheck, ShoppingBag, Tags, Truck, UserRoundCheck, Users } from 'lucide-react'
 import { BarChart3, Bell, Boxes, CalendarDays, ClipboardList, CreditCard, Layers, LayoutDashboard, Package, Settings, ShieldCheck, ShoppingBag, Tags, Truck, UserRoundCheck, Users, Warehouse } from 'lucide-react'
 
 // `access` decides who sees an item: { permission } | { any: [...] } | { owner: true }. Items without it
@@ -25,6 +26,7 @@ export const adminNavigation = [
       { label: 'Inventory', path: '/admin/inventory', icon: ClipboardList, access: { any: ['products:view', 'products:manage', 'inventory:update'] } },
       { label: 'Stock Management', path: '/admin/stock', icon: Layers, access: { any: ['products:view', 'products:manage', 'inventory:update'] } },
       { label: 'Categories', path: '/admin/categories', icon: Tags, access: { permission: 'categories:manage' } },
+      { label: 'Deals Management', path: '/admin/deals', icon: BadgePercent, access: { owner: true } },
     ],
   },
   {

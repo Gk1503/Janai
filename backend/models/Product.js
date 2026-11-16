@@ -49,6 +49,12 @@ const productSchema = new mongoose.Schema({
   preOrderAvailable: { type: Boolean, default: false },
   bulkAvailable: { type: Boolean, default: false },
   featured: { type: Boolean, default: false },
+  // Eligibility for the Deals Management pickers. Marking a product here is NOT a discount and does not put
+  // it on the homepage; a promotion (Promotion.products) still has to include it.
+  dealPlacements: {
+    bestDeals: { type: Boolean, default: false },
+    seasonalDeals: { type: Boolean, default: false },
+  },
   // Customer-facing Minimum Order Quantity (Phase 6) — unrelated to vendors[].moq above, which is a
   // supplier's own procurement minimum. All three optional and nullable: absent/null means "no minimum
   // enforced", never a silent default — see utils/productVariations.js::effectiveMoq for the fallback

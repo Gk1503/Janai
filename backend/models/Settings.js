@@ -45,6 +45,13 @@ const notificationSettingsSchema = new mongoose.Schema({
 	orderCancelled: { type: Boolean, default: false },
 }, { _id: false });
 
+// Customer-facing promotion sections. Both default to false: nothing is shown or discounted until the
+// owner switches a section on, and a settings document that predates this field reads as all-off, so no
+// migration is needed. Turning a section off never touches the promotions themselves (models/Promotion.js).
+const dealSettingsSchema = new mongoose.Schema({
+	bestDealsEnabled: { type: Boolean, default: false },
+	seasonalDealsEnabled: { type: Boolean, default: false },
+}, { _id: false });
 // Universal Pricing: owner-configured markup rules matched against a product's purchase price.
 // Boundary convention: minPurchasePrice is inclusive, maxPurchasePrice is exclusive; a rule with no
 // maxPurchasePrice (null) is the open-ended final range. Keeps a normal auto-assigned _id (like
@@ -75,6 +82,7 @@ const settingsSchema = new mongoose.Schema({
 	},
 	orderSettings: { type: orderSettingsSchema, default: () => ({}) },
 	notifications: { type: notificationSettingsSchema, default: () => ({}) },
+	deals: { type: dealSettingsSchema, default: () => ({}) },
 	// Never configured = no universal rules = no universal suggestion shown anywhere. Existing product
 	// prices are never touched by this field; nothing reads it except the Settings API itself.
 	pricingRules: { type: [pricingRuleSchema], default: [] },

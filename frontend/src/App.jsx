@@ -10,6 +10,8 @@ import ScrollToTop from './components/ScrollToTop'
 import { AuthProvider, CartProvider, ToastProvider } from './context/AppContexts'
 import AdminAccountPage from './pages/AdminAccountPage'
 import AdminHomePage from './pages/AdminHomePage'
+import AdminDealsPage from './pages/AdminDealsPage'
+import AdminReportsPage from './pages/AdminReportsPage'
 import AdminSettingsPage from './pages/AdminSettingsPage'
 import DeliveryDashboardPage from './pages/DeliveryDashboardPage'
 import DeliveryLoginPage from './pages/DeliveryLoginPage'
@@ -29,8 +31,10 @@ import AdminReportsPage from './pages/AdminReportsPage'
 import { AdminBulkOrdersPage, AdminOrdersPage, AdminPreOrdersPage } from './pages/AdminOrderPages'
 import { AboutPage, AdminLoginPage, ContactPage, ForgotPasswordPage, LoginPage, RegisterPage } from './pages/AccountPages'
 import BulkOrdersPage from './pages/BulkOrdersPage'
+import BulkOrderDetailPage from './pages/BulkOrderDetailPage'
 import NotFoundPage from './pages/NotFoundPage'
 import { CartPage, CheckoutPage, OrderDetailPage, OrdersPage, PreOrdersPage, ProfilePage } from './pages/OrderPages'
+import { BestDealsPage, SeasonalDealsPage } from './pages/DealPages'
 import { HomePage, ProductPage, ShopPage } from './pages/StorePages'
 import './Janai.css'
 
@@ -39,6 +43,8 @@ export default function App() {
     <Route element={<Layout />}>
       <Route index element={<HomePage />} />
       <Route path="shop" element={<ShopPage />} />
+      <Route path="best-deals" element={<BestDealsPage />} />
+      <Route path="seasonal-deals" element={<SeasonalDealsPage />} />
       <Route path="product/:id" element={<ProductPage />} />
       <Route path="products/:id" element={<ProductPage />} />
       <Route path="cart" element={<CartPage />} />
@@ -53,6 +59,7 @@ export default function App() {
         <Route path="checkout" element={<CheckoutPage />} />
         <Route path="orders" element={<OrdersPage />} />
         <Route path="orders/:id" element={<OrderDetailPage />} />
+        <Route path="bulk-orders/:id" element={<BulkOrderDetailPage />} />
         <Route path="profile" element={<ProfilePage />} />
       </Route>
       <Route path="404" element={<NotFoundPage />} />
@@ -112,6 +119,8 @@ export default function App() {
           <Route path="admin/staff" element={<AdminStaffPage />} />
           <Route path="admin/delivery-staff" element={<AdminDeliveryStaffPage />} />
           <Route path="admin/settings" element={<AdminSettingsPage />} />
+          <Route path="admin/reports" element={<AdminReportsPage />} />
+          <Route path="admin/deals" element={<AdminDealsPage />} />
           {/* Phase 7.1: activates the pre-existing BUSINESS > Reports nav entry (adminNavigation.js),
               which previously had no route and fell through to the admin/* AdminComingSoon placeholder
               below. Same access as that nav entry already declared (owner-only) — unchanged. */}

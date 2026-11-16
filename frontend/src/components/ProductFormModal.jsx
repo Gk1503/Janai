@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, IndianRupee, Image as ImageIcon, ListChecks, Plus, RefreshCw, Save, Star, Store, Trash2, Upload } from 'lucide-react'
 import api, { getApiError } from '../services/api'
-import { useToast } from '../context/AppContexts'
+import { useAuth, useToast } from '../context/AppContexts'
 import { Modal } from './UI'
 import { VendorPriceHistoryModal, VendorPurchaseHistoryModal } from './VendorHistoryModals'
 import VendorFormModal from './VendorFormModal'
@@ -54,6 +54,8 @@ function toFormState(product) {
     preOrderMoq: product?.preOrderMoq ?? '',
   }
 }
+
+const placementsOf = (product) => ({ bestDeals: product?.dealPlacements?.bestDeals === true, seasonalDeals: product?.dealPlacements?.seasonalDeals === true })
 
 function emptyVendor() {
   return {
@@ -234,6 +236,10 @@ export default function ProductFormModal({ product, onClose, onSaved }) {
   // re-derives applied-ness from current state every render instead of trusting a stale flag.
   const [appliedSnapshot, setAppliedSnapshot] = useState(null)
   const [vendors, setVendors] = useState(() => toVendorEntries(product))
+  const { user } = useAuth()
+  // Promotional placement belongs to Deals Management, which only the owner can use.
+  const canPlace = user?.role === 'admin'
+  const [placements, setPlacements] = useState(() => placementsOf(product))
   // Central Vendor collection (Stage 1), owner/products:manage/inventory:update only — same
   // permission model as the existing per-product vendor data. Fetched once on mount, same pattern as
   // /categories and /settings/pricing-rules above. A 403 (a products:view-only staff member, who can
@@ -460,9 +466,21 @@ export default function ProductFormModal({ product, onClose, onSaved }) {
           notes: vendor.notes,
         })),
     }
+    // Sent only when the owner changed it (or marked a brand-new product), so an ordinary edit never touches it.
+    const before = placementsOf(product)
+    const placementChanged = placements.bestDeals !== before.bestDeals || placements.seasonalDeals !== before.seasonalDeals
+    if (canPlace && placementChanged) payload.dealPlacements = placements
     try {
-      if (isEdit) await api.put(`/products/${product._id}`, payload)
-      else await api.post('/products', payload)
+      try {
+        if (isEdit) await api.put(`/products/${product._id}`, payload)
+        else await api.post('/products', payload)
+      } catch (requestError) {
+        // The product is still part of promotions in a section it was just removed from: say so, and only
+        // continue (taking it out of those promotions) if the admin agrees.
+        if (requestError.response?.data?.code !== 'PLACEMENT_IN_USE') throw requestError
+        if (!window.confirm(`${requestError.response.data.message}\n\nThe product itself is not deleted. Continue?`)) { setBusy(false); return }
+        await api.put(`/products/${product._id}`, { ...payload, removeFromPromotions: true })
+      }
       toast(isEdit ? 'Product updated.' : 'Product added.')
       onSaved()
       onClose()
@@ -610,6 +628,15 @@ export default function ProductFormModal({ product, onClose, onSaved }) {
           </div>
         </div>
       </div>
+
+      {canPlace && <div className="adm-form-section">
+        <span className="adm-modal-section-title">Promotional Placement</span>
+        <div className="adm-soft-section placement-options">
+          <p className="adm-form-section-description">Choose where this product can be used in Deals Management. This only makes the product available to add to a promotion. It does not change its price, create a promotion or turn a section on.</p>
+          {[['bestDeals', 'Best Deals'], ['seasonalDeals', 'Seasonal Deals']].map(([key, label]) => <label key={key} className={`placement-choice${placements[key] ? ' selected' : ''}`}><input type="checkbox" checked={placements[key]} onChange={(event) => setPlacements((current) => ({ ...current, [key]: event.target.checked }))} /><span>{label}</span></label>)}
+          <label className={`placement-choice${!placements.bestDeals && !placements.seasonalDeals ? ' selected' : ''}`}><input type="checkbox" checked={!placements.bestDeals && !placements.seasonalDeals} onChange={() => setPlacements({ bestDeals: false, seasonalDeals: false })} /><span>Neither</span></label>
+        </div>
+      </div>}
 
       <div className="adm-form-section">
         <div className="adm-form-section-head"><ListChecks size={16} /><h3>Ordering Rules</h3></div>

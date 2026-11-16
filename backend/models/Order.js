@@ -8,6 +8,14 @@ const itemSchema = new mongoose.Schema({
 	price: { type: Number, min: 0, required: true },
 	unit: { type: String, required: true },
 	quantity: { type: Number, min: 1, required: true },
+	// `price` is the FINAL unit price the customer pays, so every `price * quantity` total stays correct.
+	// The fields below are an immutable pricing snapshot taken at order time; orders placed before they
+	// existed simply do not have them.
+	originalPrice: { type: Number, min: 0 },
+	discountPerUnit: { type: Number, min: 0 },
+	discountTotal: { type: Number, min: 0 },
+	lineTotal: { type: Number, min: 0 },
+	promotion: { type: new mongoose.Schema({ id: { type: mongoose.Schema.Types.ObjectId }, title: { type: String }, section: { type: String } }, { _id: false }), default: undefined },
 	// Inventory foundation (Phase 2). Null/absent on every order placed before this field existed, and
 	// on any new order against a product with no real variations — both read as the implicit default
 	// variation (utils/productVariations.js), never migrated or backfilled.

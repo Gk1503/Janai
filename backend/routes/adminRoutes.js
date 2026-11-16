@@ -1,9 +1,12 @@
 import { Router } from 'express';
 import { getCustomerDetail, getCustomerStats, listUsers, updateUserRole } from '../controllers/adminController.js';
+import { listAdminBulkOrders, setBulkOrderQuotation, updateAdminBulkOrderStatus } from '../controllers/bulkOrderController.js';
 import { listAdminBulkOrders, resolveBulkOrderItems, updateAdminBulkOrderStatus } from '../controllers/bulkOrderController.js';
 import { assignDeliveryOrder, listDeliveryOrders, listEligibleDeliveryStaff } from '../controllers/deliveryController.js';
 import { listAdminOrders, updateOrderStatus } from '../controllers/orderController.js';
 import { requireAnyPermission, requireAuth, requireOwner, requirePanelAccess, requirePermission } from '../middleware/auth.js';
+import dealRoutes from './dealRoutes.js';
+import reportRoutes from './reportRoutes.js';
 import staffRoutes from './staffRoutes.js';
 
 const router = Router();
@@ -11,6 +14,10 @@ const router = Router();
 router.use(requireAuth, requirePanelAccess);
 // Staff & Access: owner only, enforced here once for every staff endpoint.
 router.use('/staff', requireOwner, staffRoutes);
+// Reports & Analytics: owner only, like the Reports sidebar item.
+router.use('/reports', requireOwner, reportRoutes);
+// Deals Management (Best Deals and Seasonal Deals): owner only.
+router.use('/deals', requireOwner, dealRoutes);
 router.get('/users', requirePermission('customers:view'), listUsers);
 router.get('/customers/stats', requirePermission('customers:view'), getCustomerStats);
 router.get('/customers/:id', requirePermission('customers:view'), getCustomerDetail);
@@ -26,6 +33,7 @@ router.patch('/orders/:id/status', requireAnyPermission('orders:update_status', 
 router.get('/bulk-orders', requirePermission('bulk:view'), listAdminBulkOrders);
 router.patch('/bulk-orders/:id/items', requirePermission('bulk:update'), resolveBulkOrderItems);
 router.patch('/bulk-orders/:id/status', requirePermission('bulk:update'), updateAdminBulkOrderStatus);
+router.put('/bulk-orders/:id/quotation', requirePermission('bulk:update'), setBulkOrderQuotation);
 router.get('/delivery/orders', requirePermission('delivery:view'), listDeliveryOrders);
 router.get('/delivery/staff', requirePermission('delivery:view'), listEligibleDeliveryStaff);
 router.patch('/delivery/orders/:id/assign', requirePermission('delivery:update'), assignDeliveryOrder);

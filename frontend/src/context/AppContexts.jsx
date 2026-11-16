@@ -134,10 +134,38 @@ export function CartProvider({ children }) {
     setCart(data.cart)
   }
 
-  const items = cart.items || []
+  // The server prices every line (see backend/utils/promotionPricing.js). Each product carries its `offer`
+  // (or null), and `total` is the payable subtotal: the sum of the server's unit prices.
+  const items = (cart.items || []).map((item) => (item.product ? { ...item, product: { ...item.product, offer: item.offer ?? null } } : item))
   const count = items.reduce((sum, item) => sum + item.quantity, 0)
-  const total = items.reduce((sum, item) => sum + (item.product?.price || 0) * item.quantity, 0)
-  return <CartContext.Provider value={{ cart, items, count, total, cartLoading, addItem, setQuantity, removeItem, clearCart, refreshCart }}>{children}</CartContext.Provider>
+  const unitOf = (item) => item.unitPrice ?? item.product?.price ?? 0
+  const total = items.reduce((sum, item) => sum + unitOf(item) * item.quantity, 0)
+  const originalTotal = items.reduce((sum, item) => sum + (item.product?.price || 0) * item.quantity, 0)
+  const discountTotal = Math.max(0, Math.round((originalTotal - total) * 100) / 100)
+
+  // Remembers the unit price last shown for each cart line, so a price that changed in between (for example a
+  // promotion that expired) is explained to the customer instead of silently appearing different.
+  const [priceNotice, setPriceNotice] = useState([])
+  useEffect(() => {
+    if (!user?._id || cartLoading) return
+    try {
+      const key = `janai_cart_prices_${user._id}`
+      const previous = JSON.parse(localStorage.getItem(key) || '{}')
+      const next = {}
+      const changes = []
+      for (const item of items) {
+        if (!item.product) continue
+        const price = unitOf(item)
+        next[item.product._id] = price
+        const before = previous[item.product._id]
+        if (typeof before === 'number' && Math.abs(before - price) > 0.009) changes.push({ name: item.product.name, from: before, to: price })
+      }
+      localStorage.setItem(key, JSON.stringify(next))
+      if (changes.length) setPriceNotice(changes)
+    } catch { /* storage unavailable: no notice, prices are still correct */ }
+  }, [cart, user?._id, cartLoading]) // eslint-disable-line react-hooks/exhaustive-deps
+  const dismissPriceNotice = () => setPriceNotice([])
+  return <CartContext.Provider value={{ cart, items, count, total, originalTotal, discountTotal, priceNotice, dismissPriceNotice, cartLoading, addItem, setQuantity, removeItem, clearCart, refreshCart }}>{children}</CartContext.Provider>
 }
 
 export function ToastProvider({ children }) {
