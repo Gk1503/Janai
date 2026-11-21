@@ -417,7 +417,8 @@ describe('Phase 6: bulk MOQ is enforced at resolution (resolveBulkOrderItems)', 
     try {
       const resolveResult = await run(resolveBulkOrderItems, { user: admin, params: { id: 'bulk1' }, body: { items: [{ index: 0, productId: FAKE_PRODUCT_ID, variationId: null }] } });
       assert.equal(resolveResult.status, 200);
-      request.status = 'Reviewing';
+      request.status = 'Quoted';
+      request.quotation = { items: [{ name: 'Tomato', quantity: 5, unit: 'kg', unitPrice: 20, lineTotal: 100 }], deliveryCharge: 0, totalAmount: 100 };
       // Raise the MOQ far above the already-resolved quantity — approval must not re-check it.
       product.bulkMoq = 1000;
 

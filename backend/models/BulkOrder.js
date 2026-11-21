@@ -20,7 +20,6 @@ const bulkOrderSchema = new mongoose.Schema({
   email: { type: String, required: true, lowercase: true, trim: true },
   organization: { type: String, trim: true, default: '' },
   orderType: { type: String, enum: ['Business', 'Office', 'Event', 'Party', 'Large Family', 'Other'], default: 'Business' },
-  products: [{ product: { type: mongoose.Schema.Types.ObjectId, ref: 'Product' }, name: { type: String, required: true }, quantity: { type: Number, min: 1, required: true }, unit: { type: String, default: 'kg' } }],
   requiredDate: { type: Date, required: true },
   deliveryAddress: { type: String, required: true, trim: true },
   additionalRequirements: { type: String, trim: true, maxlength: 2000, default: '' },
@@ -30,6 +29,8 @@ const bulkOrderSchema = new mongoose.Schema({
   // Customer-visible note from the business (for example the reason a request was rejected).
   adminResponse: { type: new mongoose.Schema({ message: { type: String, trim: true, maxlength: 1000, default: '' }, at: { type: Date } }, { _id: false }), default: undefined },
   products: [{
+    // Set when the customer picked the line from the catalogue (see utils/bulkOrderWorkflow.js::validateRequestLines).
+    product: { type: mongoose.Schema.Types.ObjectId, ref: 'Product' },
     name: { type: String, required: true },
     quantity: { type: Number, min: 1, required: true },
     unit: { type: String, default: 'kg' },
@@ -41,10 +42,6 @@ const bulkOrderSchema = new mongoose.Schema({
     productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', default: null },
     variationId: { type: String, default: null },
   }],
-  requiredDate: { type: Date, required: true },
-  deliveryAddress: { type: String, required: true, trim: true },
-  additionalRequirements: { type: String, trim: true, maxlength: 2000, default: '' },
-  status: { type: String, enum: ['Pending', 'Reviewing', 'Approved', 'Rejected', 'Completed'], default: 'Pending' },
   // Inventory foundation (Phase 2). Same exactly-once claim pattern as Order — see that model's own
   // comment. Deduction happens on the Approved transition; restoration happens if an Approved request is
   // later moved to Rejected (there is no separate "Cancelled" status on bulk requests).

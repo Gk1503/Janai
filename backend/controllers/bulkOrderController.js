@@ -6,7 +6,6 @@ import asyncHandler from '../utils/asyncHandler.js';
 import { hasPermission } from '../config/permissions.js';
 import { maskBulkOrder } from '../utils/privacy.js';
 import { addVariationStock, deductVariationStock, effectiveMoq, isLegacyTarget, resolveVariation } from '../utils/productVariations.js';
-import { validateOrderQuantity } from '../utils/quantity.js';
 import { buildStatusEntry, statusUpdateWithAudit, withPresentedHistory } from '../utils/statusAudit.js';
 import {
   BULK_ORDER_TYPES, BULK_STATUSES, CUSTOMER_CANCELLABLE, QUOTABLE, buildQuotation, canTransition, isValidId,
@@ -39,11 +38,6 @@ export const createBulkOrder = asyncHandler(async (req, res) => {
   const checked = validateRequestLines(products, catalogue);
   if (checked.error) return res.status(400).json({ message: checked.error });
 
-  if (!orderTypes.includes(orderType)) return res.status(400).json({ message: 'Choose a valid bulk order type.' });
-  // Decimal quantities (Phase 6) are accepted above the existing minimum of 1 — see utils/quantity.js.
-  // These lines are still free text with no real Product reference yet (see resolveBulkOrderItems
-  // below for where bulk MOQ is actually enforced), so this remains a pure format check.
-  if (!Array.isArray(products) || !products.length || products.some((item) => !String(item.name || '').trim() || !validateOrderQuantity(item.quantity).value)) return res.status(400).json({ message: 'Add products with valid quantities.' });
   const date = new Date(requiredDate);
   if (!requiredDate || Number.isNaN(date.getTime()) || date <= new Date()) return res.status(400).json({ message: 'Required delivery date must be in the future.' });
   if (date.getTime() - Date.now() > MAX_REQUIRED_DATE_DAYS * 24 * 60 * 60 * 1000) return res.status(400).json({ message: 'Choose a required date within the next two years.' });
@@ -210,15 +204,7 @@ async function changeRequestStatus(req, res, { includeHistory }) {
   if (target === 'Rejected' && !message.value) return res.status(400).json({ message: 'Add a reason for the customer when rejecting a request.' });
   if (target === 'Approved' && !current.quotation?.items?.length) return res.status(409).json({ message: 'Send a quotation before approving this request.' });
 
-  // Status, optional customer note and audit entry are one atomic document update, conditional on the status we read.
-  const update = statusUpdateWithAudit('status', target, buildStatusEntry(req.user, 'bulk', current.status, target));
-  if (message.value) update.$set.adminResponse = { message: message.value, at: new Date() };
-  const query = BulkOrder.findOneAndUpdate({ _id: current.id, status: current.status }, update, { new: true, runValidators: true });
-  const request = await (withHistory ? query.select('+statusHistory') : query);
-  if (!request) return res.status(409).json({ message: 'This request was just updated by someone else. Refresh and try again.' });
-  if (current.status === req.body.status) return res.json({ request: present(current) });
-
-  const isApproving = req.body.status === 'Approved' && current.status !== 'Approved';
+  const isApproving = target === 'Approved' && current.status !== 'Approved';
 
   let request;
   if (isApproving) {
@@ -235,14 +221,15 @@ async function changeRequestStatus(req, res, { includeHistory }) {
     }
     if (!request) return res.status(409).json({ message: 'This request was just updated by someone else. Refresh and try again.' });
   } else {
-    // Status and audit entry are one atomic document update, conditional on the status we read.
-    const update = statusUpdateWithAudit('status', req.body.status, buildStatusEntry(req.user, 'bulk', current.status, req.body.status));
+    // Status, optional customer note and audit entry are one atomic document update, conditional on the status we read.
+    const update = statusUpdateWithAudit('status', target, buildStatusEntry(req.user, 'bulk', current.status, target));
+    if (message.value) update.$set.adminResponse = { message: message.value, at: new Date() };
     const query = BulkOrder.findOneAndUpdate({ _id: current.id, status: current.status }, update, { new: true, runValidators: true });
     request = await (withHistory ? query.select('+statusHistory') : query);
     if (!request) return res.status(409).json({ message: 'This request was just updated by someone else. Refresh and try again.' });
   }
 
-  if (current.status === 'Approved' && req.body.status === 'Rejected') {
+  if (current.status === 'Approved' && target === 'Rejected') {
     const { failed } = await restoreBulkOrderStockTransactionally(request, req.user);
     if (failed) {
       // The rejection itself is persisted and audited, so say exactly that instead of reporting plain

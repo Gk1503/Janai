@@ -2,6 +2,8 @@ import Cart from '../models/Cart.js';
 import Product from '../models/Product.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import { loadPricingContext, priceLines } from '../utils/promotionPricing.js';
+import { effectiveMoq } from '../utils/productVariations.js';
+import { validateOrderQuantity } from '../utils/quantity.js';
 
 // The cart as sent to the browser: each line carries the server-calculated offer and unit price, and the
 // cart carries the original subtotal, discount and payable subtotal. The stored cart holds only product ids
@@ -17,8 +19,6 @@ export async function presentCart(cart) {
   });
   return { ...plain, items, pricing: { originalSubtotal: priced.originalSubtotal, discountTotal: priced.discountTotal, subtotal: priced.subtotal } };
 }
-import { effectiveMoq } from '../utils/productVariations.js';
-import { validateOrderQuantity } from '../utils/quantity.js';
 
 export const getCart = asyncHandler(async (req, res) => {
   const cart = await Cart.findOne({ user: req.user.id }).populate({ path: 'items.product', select: '-vendors' });

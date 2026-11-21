@@ -1,3 +1,4 @@
+import { validateOrderQuantity } from './quantity.js';
 import mongoose from 'mongoose';
 
 export const BULK_STATUSES = ['Pending', 'Reviewing', 'Quoted', 'Approved', 'Processing', 'Completed', 'Rejected', 'Cancelled'];
@@ -46,8 +47,10 @@ export function validateRequestLines(products, catalogue = new Map()) {
   const lines = [];
   for (const entry of products) {
     if (!entry || typeof entry !== 'object') return { error: 'Add products with valid quantities.' };
-    const quantity = Number(entry.quantity);
-    if (!Number.isInteger(quantity) || quantity < 1 || quantity > MAX_QUANTITY) return { error: `Quantities must be whole numbers between 1 and ${MAX_QUANTITY}.` };
+    // Decimal quantities (up to 3 places, minimum 1) are accepted — see utils/quantity.js.
+    const checkedQuantity = validateOrderQuantity(entry.quantity);
+    const quantity = checkedQuantity.value;
+    if (checkedQuantity.error || quantity > MAX_QUANTITY) return { error: `Quantities must be between 1 and ${MAX_QUANTITY}, with at most 3 decimal places.` };
     const listed = entry.productId !== undefined && entry.productId !== null && entry.productId !== '' ? catalogue.get(String(entry.productId)) : null;
     if (entry.productId && !listed) return { error: 'One of the selected products is no longer available for bulk orders.' };
     const name = listed ? listed.name : text(entry.name);

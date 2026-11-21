@@ -63,24 +63,6 @@ export function createOrder(orderType = 'normal') {
     for (const item of items) {
       const product = byId.get(String(item.productId));
       if (orderType === 'preorder' && !product.preOrderAvailable) return res.status(400).json({ message: `${product.name} is not available for pre-order.` });
-      if (orderType === 'normal' && item.quantity > product.stock) return res.status(409).json({ message: `Only ${product.stock} ${product.unit} of ${product.name} are available.` });
-      // `price` on the stored line is the final unit price actually charged; the rest of the pricing is kept
-      // as an immutable snapshot, so later edits to the product or promotion never change this order.
-      const offer = bestOfferFor(product, promotions);
-      const unitPrice = offer ? offer.finalPrice : product.price;
-      const discountPerUnit = offer ? offer.discountPerUnit : 0;
-      subtotal += unitPrice * item.quantity;
-      orderItems.push({
-        product: product.id, name: product.name, image: product.images[0] || '', price: unitPrice, unit: product.unit, quantity: item.quantity,
-        originalPrice: product.price, discountPerUnit, discountTotal: round2(discountPerUnit * item.quantity), lineTotal: round2(unitPrice * item.quantity),
-        ...(offer ? { promotion: { id: offer.promotionId, title: offer.title, section: offer.section } } : {}),
-      });
-    }
-    subtotal = round2(subtotal);
-    // The browser may say what total it showed, only so a changed price (for example an expired promotion)
-    // is reported instead of silently charged. It is never used as a price.
-    if (req.body.expectedSubtotal !== undefined && Math.abs(Number(req.body.expectedSubtotal) - subtotal) > 0.009) {
-      return res.status(409).json({ code: 'PRICE_CHANGED', message: 'Some prices changed since you last viewed your cart. Please review the updated prices and place your order again.', pricing: { subtotal } });
       const variation = resolveVariation(product, item.variationId);
       if (!variation) return res.status(400).json({ message: `The selected option for ${product.name} is no longer available.` });
       // Phase 6: MOQ is checked here — after the real product/variation is resolved, before any stock
@@ -94,12 +76,25 @@ export function createOrder(orderType = 'normal') {
         });
       }
       if (orderType === 'normal' && item.quantity > variation.stock) return res.status(409).json({ message: `Only ${variation.stock} ${variation.unit} of ${product.name} are available.` });
-      subtotal += product.price * item.quantity;
+      // `price` on the stored line is the final unit price actually charged; the rest of the pricing is kept
+      // as an immutable snapshot, so later edits to the product or promotion never change this order.
+      const offer = bestOfferFor(product, promotions);
+      const unitPrice = offer ? offer.finalPrice : product.price;
+      const discountPerUnit = offer ? offer.discountPerUnit : 0;
+      subtotal += unitPrice * item.quantity;
       orderItems.push({
-        product: product.id, name: product.name, image: product.images[0] || '', price: product.price,
+        product: product.id, name: product.name, image: product.images[0] || '', price: unitPrice,
         unit: variation.unit, quantity: item.quantity,
         variationId: variation.isLegacy ? null : String(variation._id), variationLabel: variation.isLegacy ? '' : variation.label,
+        originalPrice: product.price, discountPerUnit, discountTotal: round2(discountPerUnit * item.quantity), lineTotal: round2(unitPrice * item.quantity),
+        ...(offer ? { promotion: { id: offer.promotionId, title: offer.title, section: offer.section } } : {}),
       });
+    }
+    subtotal = round2(subtotal);
+    // The browser may say what total it showed, only so a changed price (for example an expired promotion)
+    // is reported instead of silently charged. It is never used as a price.
+    if (req.body.expectedSubtotal !== undefined && Math.abs(Number(req.body.expectedSubtotal) - subtotal) > 0.009) {
+      return res.status(409).json({ code: 'PRICE_CHANGED', message: 'Some prices changed since you last viewed your cart. Please review the updated prices and place your order again.', pricing: { subtotal } });
     }
     if (subtotal < rules.minimumOrderValue) return res.status(400).json({ message: `Minimum order value is ₹${rules.minimumOrderValue}. Add more items to continue.` });
     // The server computes this from the current settings and the looked-up product prices alone —

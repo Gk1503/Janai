@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import { getCustomerDetail, getCustomerStats, listUsers, updateUserRole } from '../controllers/adminController.js';
-import { listAdminBulkOrders, setBulkOrderQuotation, updateAdminBulkOrderStatus } from '../controllers/bulkOrderController.js';
-import { listAdminBulkOrders, resolveBulkOrderItems, updateAdminBulkOrderStatus } from '../controllers/bulkOrderController.js';
+import { listAdminBulkOrders, resolveBulkOrderItems, setBulkOrderQuotation, updateAdminBulkOrderStatus } from '../controllers/bulkOrderController.js';
 import { assignDeliveryOrder, listDeliveryOrders, listEligibleDeliveryStaff } from '../controllers/deliveryController.js';
 import { listAdminOrders, updateOrderStatus } from '../controllers/orderController.js';
 import { requireAnyPermission, requireAuth, requireOwner, requirePanelAccess, requirePermission } from '../middleware/auth.js';

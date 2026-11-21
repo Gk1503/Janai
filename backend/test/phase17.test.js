@@ -7,6 +7,7 @@ import StockMovement from '../models/StockMovement.js';
 import VendorPurchase from '../models/VendorPurchase.js';
 import Vendor from '../models/Vendor.js';
 import Cart from '../models/Cart.js';
+import Settings from '../models/Settings.js';
 import {
   LEGACY_VARIATION_ID, deductVariationStock, getEffectiveVariations, isLegacyTarget, resolveVariation, restoreVariationStock,
 } from '../utils/productVariations.js';
@@ -21,6 +22,8 @@ import { transactionHelper } from '../utils/withTransaction.js';
 // replaced with simple pass-throughs — nothing here tests transaction mechanics or ledger content, only
 // the pre-existing variation-aware stock behaviour.
 transactionHelper.run = async (work) => work({ id: 'fake-session' });
+// createOrder reads order and deals settings; without a stub each read waits ~10s for a database.
+Settings.findOne = () => ({ lean: async () => ({ orderSettings: { deliveryEnabled: true, deliveryFee: 25, freeDeliveryThreshold: 500, minimumOrderValue: 0 } }) });
 StockMovement.create = async (docs) => docs.map((doc, index) => ({ ...doc, _id: `stub-movement-${index}` }));
 
 function run(handler, req) {
@@ -542,12 +545,12 @@ describe('bulkOrderController: item resolution and approval-time deduction', () 
   it('approval is blocked while any line is unresolved, and deducts nothing', async () => {
     const product = variedProduct();
     const restoreProductStock = stubProductStock(product);
-    const request = { _id: 'bulk1', status: 'Reviewing', stockDeductedAt: null, stockRestoredAt: null, products: [{ name: 'Tomatoes', quantity: 2, unit: 'kg', productId: null, variationId: null }] };
+    const request = { _id: 'bulk1', status: 'Quoted', quotation: { items: [{ name: 'Tomatoes', quantity: 2, unit: 'kg', unitPrice: 20, lineTotal: 40 }], deliveryCharge: 0, totalAmount: 40 }, stockDeductedAt: null, stockRestoredAt: null, products: [{ name: 'Tomatoes', quantity: 2, unit: 'kg', productId: null, variationId: null }] };
     const restoreOrder = stubBulkOrder(request);
     try {
       const result = await run(updateAdminBulkOrderStatus, { user: admin, body: { status: 'Approved' } , params: { id: 'bulk1' }});
       assert.equal(result.status, 409);
-      assert.equal(request.status, 'Reviewing');
+      assert.equal(request.status, 'Quoted');
       assert.equal(product.variations[1].stock, 3);
     } finally { restoreProductStock(); restoreOrder(); }
   });
@@ -555,7 +558,7 @@ describe('bulkOrderController: item resolution and approval-time deduction', () 
   it('approval deducts every resolved line exactly once and moves to Approved', async () => {
     const product = variedProduct();
     const restoreProductStock = stubProductStock(product);
-    const request = { _id: 'bulk1', status: 'Reviewing', stockDeductedAt: null, stockRestoredAt: null, products: [{ name: 'Tomatoes', quantity: 2, unit: 'kg', productId: 'p1', variationId: 'v1kg' }] };
+    const request = { _id: 'bulk1', status: 'Quoted', quotation: { items: [{ name: 'Tomatoes', quantity: 2, unit: 'kg', unitPrice: 20, lineTotal: 40 }], deliveryCharge: 0, totalAmount: 40 }, stockDeductedAt: null, stockRestoredAt: null, products: [{ name: 'Tomatoes', quantity: 2, unit: 'kg', productId: 'p1', variationId: 'v1kg' }] };
     const restoreOrder = stubBulkOrder(request);
     try {
       const result = await run(updateAdminBulkOrderStatus, { user: admin, body: { status: 'Approved' }, params: { id: 'bulk1' } });
@@ -585,7 +588,7 @@ describe('bulkOrderController: item resolution and approval-time deduction', () 
     const request = { _id: 'bulk1', status: 'Approved', stockDeductedAt: new Date(), stockRestoredAt: null, products: [{ name: 'Tomatoes', quantity: 2, unit: 'kg', productId: 'p1', variationId: 'v1kg' }] };
     const restoreOrder = stubBulkOrder(request);
     try {
-      const result = await run(updateAdminBulkOrderStatus, { user: admin, body: { status: 'Rejected' }, params: { id: 'bulk1' } });
+      const result = await run(updateAdminBulkOrderStatus, { user: admin, body: { status: 'Rejected', message: 'Out of stock' }, params: { id: 'bulk1' } });
       assert.equal(result.status, 200);
       assert.equal(product.variations[0].stock, 3); // 1 + 2
       assert.notEqual(request.stockRestoredAt, null);

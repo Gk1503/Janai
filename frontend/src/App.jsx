@@ -12,6 +12,7 @@ import AdminAccountPage from './pages/AdminAccountPage'
 import AdminHomePage from './pages/AdminHomePage'
 import AdminDealsPage from './pages/AdminDealsPage'
 import AdminReportsPage from './pages/AdminReportsPage'
+import AdminStockReportsPage from './pages/AdminStockReportsPage'
 import AdminSettingsPage from './pages/AdminSettingsPage'
 import DeliveryDashboardPage from './pages/DeliveryDashboardPage'
 import DeliveryLoginPage from './pages/DeliveryLoginPage'
@@ -27,7 +28,6 @@ import AdminVendorsPage from './pages/AdminVendorsPage'
 import AdminVendorDetailPage from './pages/AdminVendorDetailPage'
 import AdminInventoryPage from './pages/AdminInventoryPage'
 import AdminStockPage from './pages/AdminStockPage'
-import AdminReportsPage from './pages/AdminReportsPage'
 import { AdminBulkOrdersPage, AdminOrdersPage, AdminPreOrdersPage } from './pages/AdminOrderPages'
 import { AboutPage, AdminLoginPage, ContactPage, ForgotPasswordPage, LoginPage, RegisterPage } from './pages/AccountPages'
 import BulkOrdersPage from './pages/BulkOrdersPage'
@@ -121,10 +121,7 @@ export default function App() {
           <Route path="admin/settings" element={<AdminSettingsPage />} />
           <Route path="admin/reports" element={<AdminReportsPage />} />
           <Route path="admin/deals" element={<AdminDealsPage />} />
-          {/* Phase 7.1: activates the pre-existing BUSINESS > Reports nav entry (adminNavigation.js),
-              which previously had no route and fell through to the admin/* AdminComingSoon placeholder
-              below. Same access as that nav entry already declared (owner-only) — unchanged. */}
-          <Route path="admin/reports" element={<AdminReportsPage />} />
+          <Route path="admin/stock-reports" element={<AdminStockReportsPage />} />
         </Route>
         <Route element={<RequirePermission any={['delivery:view']} />}>
           <Route path="admin/delivery" element={<AdminDeliveryManagementPage />} />

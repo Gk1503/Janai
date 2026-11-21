@@ -411,7 +411,7 @@ describe('Phase 5: bulk order approval/rejection write one movement per line', (
     const restoreProduct = stubProductStock(product);
     const restoreTx = stubTransaction();
     const movement = stubMovementCreate();
-    const request = { _id: 'bulk1', status: 'Reviewing', stockDeductedAt: null, stockRestoredAt: null, products: [{ _id: 'line1', name: 'Rice', quantity: 4, unit: 'kg', productId: 'p1', variationId: null }] };
+    const request = { _id: 'bulk1', status: 'Quoted', quotation: { items: [{ name: 'Rice', quantity: 4, unit: 'kg', unitPrice: 50, lineTotal: 200 }], deliveryCharge: 0, totalAmount: 200 }, stockDeductedAt: null, stockRestoredAt: null, products: [{ _id: 'line1', name: 'Rice', quantity: 4, unit: 'kg', productId: 'p1', variationId: null }] };
     const restoreOrder = stubBulkOrderForStatus(request);
     try {
       const result = await run(updateAdminBulkOrderStatus, { user: admin, params: { id: 'bulk1' }, body: { status: 'Approved' } });
@@ -447,7 +447,7 @@ describe('Phase 5: bulk order approval/rejection write one movement per line', (
     const restoreProduct = stubProductStock(product);
     const restoreTx = stubTransaction();
     const movement = stubMovementCreate();
-    const request = { _id: 'bulk1', status: 'Reviewing', stockDeductedAt: null, stockRestoredAt: null, products: [{ _id: 'line1', name: 'Rice', quantity: 4, unit: 'kg', productId: null, variationId: null }] };
+    const request = { _id: 'bulk1', status: 'Quoted', quotation: { items: [{ name: 'Rice', quantity: 4, unit: 'kg', unitPrice: 50, lineTotal: 200 }], deliveryCharge: 0, totalAmount: 200 }, stockDeductedAt: null, stockRestoredAt: null, products: [{ _id: 'line1', name: 'Rice', quantity: 4, unit: 'kg', productId: null, variationId: null }] };
     const restoreOrder = stubBulkOrderForStatus(request);
     try {
       const result = await run(updateAdminBulkOrderStatus, { user: admin, params: { id: 'bulk1' }, body: { status: 'Approved' } });
@@ -465,7 +465,7 @@ describe('Phase 5: bulk order approval/rejection write one movement per line', (
     const request = { _id: 'bulk1', status: 'Approved', stockDeductedAt: new Date(), stockRestoredAt: null, products: [{ _id: 'line1', name: 'Rice', quantity: 4, unit: 'kg', productId: 'p1', variationId: null }] };
     const restoreOrder = stubBulkOrderForStatus(request);
     try {
-      const result = await run(updateAdminBulkOrderStatus, { user: admin, params: { id: 'bulk1' }, body: { status: 'Rejected' } });
+      const result = await run(updateAdminBulkOrderStatus, { user: admin, params: { id: 'bulk1' }, body: { status: 'Rejected', message: 'Out of stock' } });
       assert.equal(result.status, 200);
       assert.equal(product.stock, 10); // 6 + 4
       assert.equal(movement.created.length, 1);
@@ -483,7 +483,7 @@ describe('Phase 5: bulk order approval/rejection write one movement per line', (
     const request = { _id: 'bulk1', status: 'Approved', stockDeductedAt: new Date(), stockRestoredAt: null, products: [{ _id: 'line1', name: 'Rice', quantity: 4, unit: 'kg', productId: 'p1', variationId: null }] };
     const restoreOrder = stubBulkOrderForStatus(request);
     try {
-      const result = await run(updateAdminBulkOrderStatus, { user: admin, params: { id: 'bulk1' }, body: { status: 'Rejected' } });
+      const result = await run(updateAdminBulkOrderStatus, { user: admin, params: { id: 'bulk1' }, body: { status: 'Rejected', message: 'Out of stock' } });
       assert.equal(result.status, 500);
       assert.equal(result.body.code, 'STOCK_RESTORE_FAILED');
       assert.equal(movement.created.length, 0);

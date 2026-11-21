@@ -1,5 +1,4 @@
-import { BadgePercent, BarChart3, Bell, Boxes, CalendarDays, CreditCard, LayoutDashboard, Package, Settings, ShieldCheck, ShoppingBag, Tags, Truck, UserRoundCheck, Users } from 'lucide-react'
-import { BarChart3, Bell, Boxes, CalendarDays, ClipboardList, CreditCard, Layers, LayoutDashboard, Package, Settings, ShieldCheck, ShoppingBag, Tags, Truck, UserRoundCheck, Users, Warehouse } from 'lucide-react'
+import { BadgePercent, BarChart3, Bell, Boxes, CalendarDays, ClipboardList, CreditCard, Layers, LayoutDashboard, Package, Settings, ShieldCheck, ShoppingBag, Tags, Truck, UserRoundCheck, Users, Warehouse } from 'lucide-react'
 
 // `access` decides who sees an item: { permission } | { any: [...] } | { owner: true }. Items without it
 // are treated as owner-only. See utils/permissions.js; the backend enforces access regardless.
@@ -48,6 +47,7 @@ export const adminNavigation = [
     label: 'BUSINESS',
     items: [
       { label: 'Reports', path: '/admin/reports', icon: BarChart3, access: { owner: true } },
+      { label: 'Stock Reports', path: '/admin/stock-reports', icon: Warehouse, access: { owner: true } },
       { label: 'Staff & Access', path: '/admin/staff', icon: ShieldCheck, access: { owner: true } },
       // Same access as the existing per-product vendor data (productController.js's
       // canViewSupplierCosts / vendorRead) — owner implicitly included via the `any` check.
